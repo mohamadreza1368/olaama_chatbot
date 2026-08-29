@@ -145,6 +145,16 @@ const Chat = {
             });
         }
 
+        // Global Delegation for Code Block Copy Button
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.copy-code-btn');
+            if (btn) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.copyCodeBlock(btn);
+            }
+        });
+
         // Global Shortcut: Ctrl + B / Cmd + B to toggle sidebar
         window.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
@@ -471,19 +481,24 @@ const Chat = {
     },
 
     copyCodeBlock(btn) {
+        if (!btn) return;
         const wrapper = btn.closest('.code-block-wrapper');
         if (!wrapper) return;
         const codeEl = wrapper.querySelector('code');
-        const text = codeEl ? codeEl.innerText : '';
-        navigator.clipboard.writeText(text);
+        const text = codeEl ? (codeEl.textContent || codeEl.innerText) : '';
+        if (!text) return;
+
+        App.copyToClipboard(text, 'کد در کلیپ‌بورد کپی شد!');
 
         const span = btn.querySelector('span');
         if (span) span.textContent = '✓ کپی شد!';
         btn.classList.add('bg-emerald-600', 'text-white');
+        btn.classList.remove('bg-white/10', 'text-gray-200');
 
         setTimeout(() => {
             if (span) span.textContent = 'کپی کد';
             btn.classList.remove('bg-emerald-600', 'text-white');
+            btn.classList.add('bg-white/10', 'text-gray-200');
         }, 2000);
     },
 
