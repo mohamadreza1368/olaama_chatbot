@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ollama AI Chatbot & Admin Dashboard</title>
+    <title>دستیار هوشمند محلی بورس کالا | IME AI Assistant</title>
+    <link rel="icon" type="image/jpeg" href="/static/img/ime_logo.jpg">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -27,7 +28,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <link rel="stylesheet" href="/static/css/style.css?v=7">
+    <link rel="stylesheet" href="/static/css/style.css?v=8">
 </head>
 <body class="bg-gray-100 dark:bg-[#212121] text-gray-900 dark:text-gray-100 font-vazir h-screen overflow-hidden flex flex-col">
     <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
@@ -108,12 +109,21 @@
         <main class="flex-1 flex flex-col h-full bg-white dark:bg-[#212121] relative overflow-hidden">
             <header class="h-14 border-b border-gray-200 dark:border-[#2f2f2f] flex items-center justify-between px-4 bg-white/80 dark:bg-[#212121]/80 backdrop-blur z-10">
                 <div class="flex items-center gap-2 sm:gap-3">
-                    <!-- Universal Sidebar Toggle Button (Always visible and functional in header) -->
+                    <!-- Universal Sidebar Toggle Button -->
                     <button id="btn-desktop-sidebar-toggle" class="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-[#2c2c2c] text-gray-600 dark:text-gray-300 flex items-center justify-center transition border border-gray-200 dark:border-gray-700/80 bg-gray-50 dark:bg-[#1a1a1a] shadow-sm cursor-pointer" title="تغییر وضعیت سایدبار (Ctrl + B)">
                         <i data-lucide="panel-right" class="w-4 h-4" id="sidebar-toggle-icon"></i>
                     </button>
 
-                    <div class="flex items-center gap-2">
+                    <!-- IME Logo & Brand Title -->
+                    <div class="flex items-center gap-2.5">
+                        <img src="/static/img/ime_logo.jpg" alt="IME Logo" class="w-8 h-8 rounded-lg object-cover shadow-sm border border-cyan-500/40">
+                        <div class="hidden sm:flex flex-col">
+                            <span class="text-xs font-bold text-gray-900 dark:text-gray-100 leading-tight">دستیار هوشمند محلی بورس کالا</span>
+                            <span class="text-[10px] text-gray-400 font-mono">Iran Mercantile Exchange</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 mr-2">
                         <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" id="ollama-status-indicator"></span>
                         <div class="flex items-center gap-1.5">
                             <span class="text-xs text-gray-500 dark:text-gray-400">مدل فعال:</span>
@@ -131,12 +141,12 @@
 
             <div id="messages-container" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 custom-scrollbar">
                 <div id="welcome-screen" class="h-full flex flex-col items-center justify-center text-center p-6 space-y-4 max-w-lg mx-auto">
-                    <div class="w-16 h-16 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-500 flex items-center justify-center shadow-inner">
-                        <i data-lucide="bot" class="w-8 h-8"></i>
+                    <div class="w-24 h-24 rounded-2xl overflow-hidden shadow-2xl border border-cyan-500/50 p-1 bg-black/50 flex items-center justify-center">
+                        <img src="/static/img/ime_logo.jpg" alt="IME Logo" class="w-full h-full object-cover rounded-xl">
                     </div>
                     <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">چگونه می‌توانم کمکتان کنم؟</h2>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                        دستیار هوشمند با مدل محلی Ollama، خلاصه‌سازی هوشمند عناوین، سیستم صف درخواست‌ها، ریست روزانه سهمیه و پشتیبانی کامل از فایل‌های متنی، <b>PDF</b>، اسناد ورد (<b>Word / DOCX</b>) و جداول اکسل (<b>Excel / XLSX</b>).
+                    <p class="text-sm font-semibold text-emerald-600 dark:text-emerald-400 leading-relaxed">
+                        دستیار هوشمند محلی بورس کالا
                     </p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full pt-2">
                         <button class="quick-prompt-btn text-xs text-right p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-[#2f2f2f] transition text-gray-700 dark:text-gray-300" data-prompt="لطفاً خودت را معرفی کن و بگو چه توانایی‌هایی داری؟">
@@ -183,17 +193,17 @@
     <!-- AUTH MODAL (LOGIN ONLY - ACCOUNTS ARE ISSUED BY ADMIN) -->
     <div id="auth-modal" class="fixed inset-0 bg-[#121212] z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-gray-800 rounded-2xl p-6 sm:p-7 w-full max-w-md shadow-2xl space-y-4">
-            <div class="text-center space-y-1">
-                <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto mb-2">
-                    <i data-lucide="bot" class="w-6 h-6"></i>
+            <div class="text-center space-y-2">
+                <div class="w-20 h-20 rounded-2xl overflow-hidden shadow-2xl border border-cyan-500/50 p-1 bg-black/50 flex items-center justify-center mx-auto mb-1">
+                    <img src="/static/img/ime_logo.jpg" alt="IME Logo" class="w-full h-full object-cover rounded-xl">
                 </div>
-                <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100">ورود به سامانه هوش مصنوعی</h3>
-                <p class="text-xs text-gray-500 dark:text-gray-400">نام کاربری و کلمه عبور ارائه‌شده توسط مدیر را وارد نمایید</p>
+                <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100">ورود به دستیار هوشمند بورس کالا</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400">نام کاربری و کلمه عبور خود را وارد نمایید</p>
             </div>
 
             <div id="auth-guidance-box" class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed flex items-start gap-2">
                 <i data-lucide="info" class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5"></i>
-                <span>حساب کاربری و کلید اختصاصی توسط مدیر سیستم صادر و در اختیار شما قرار می‌گیرد.</span>
+                <span>حساب‌های کاربری و سهمیه استفاده روزانه توسط مدیر سیستم تعریف و اختصاص داده می‌شوند.</span>
             </div>
 
             <div id="auth-error-alert" class="hidden p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-600 dark:text-rose-400 text-xs flex items-start gap-2 animate-fade-in">
@@ -672,9 +682,9 @@
     </div>
 
     <!-- Scripts -->
-    <script src="/static/js/app.js?v=7"></script>
-    <script src="/static/js/chat.js?v=7"></script>
-    <script src="/static/js/admin.js?v=7"></script>
+    <script src="/static/js/app.js?v=8"></script>
+    <script src="/static/js/chat.js?v=8"></script>
+    <script src="/static/js/admin.js?v=8"></script>
     <script>
         document.addEventListener("DOMContentLoaded", () => {
             if (window.lucide) {
