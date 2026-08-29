@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دستیار هوشمند محلی بورس کالا | IME AI Assistant</title>
     <link rel="icon" type="image/jpeg" href="/static/img/ime_logo.jpg">
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Local Standalone Vendor Assets (100% Offline / Intranet Compatible) -->
+    <script src="/static/vendor/tailwind.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -16,19 +16,16 @@
                         brand: { 50: '#f0fdf4', 500: '#10b981', 600: '#059669', 700: '#047857' },
                         chatdark: { sidebar: '#171717', main: '#212121', card: '#2f2f2f', hover: '#383838', border: '#424242', input: '#2f2f2f' }
                     },
-                    fontFamily: { vazir: ['Vazirmatn', 'sans-serif'], inter: ['Inter', 'sans-serif'], mono: ['Fira Code', 'monospace'] }
+                    fontFamily: { vazir: ['Vazirmatn', 'Vazir', 'Tahoma', 'Segoe UI', 'IranSans', 'sans-serif'], mono: ['Fira Code', 'Consolas', 'Courier New', 'monospace'] }
                 }
             }
         }
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <link rel="stylesheet" href="/static/css/style.css?v=8">
+    <script src="/static/vendor/lucide.min.js"></script>
+    <script src="/static/vendor/marked.min.js"></script>
+    <link rel="stylesheet" href="/static/vendor/highlight-github-dark.min.css">
+    <script src="/static/vendor/highlight.min.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css?v=9">
 </head>
 <body class="bg-gray-100 dark:bg-[#212121] text-gray-900 dark:text-gray-100 font-vazir h-screen overflow-hidden flex flex-col">
     <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
