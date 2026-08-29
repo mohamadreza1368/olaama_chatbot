@@ -11,20 +11,35 @@ const App = {
 
     setupTheme() {
         const savedTheme = localStorage.getItem('theme') || 'dark';
-        if (savedTheme === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
+        this.setTheme(savedTheme === 'dark');
 
         const btnTheme = document.getElementById('btn-toggle-theme');
         if (btnTheme) {
             btnTheme.addEventListener('click', () => {
-                const isDark = document.documentElement.classList.toggle('dark');
-                localStorage.setItem('theme', isDark ? 'dark' : 'light');
-                if (window.lucide) lucide.createIcons();
+                const isCurrentlyDark = document.documentElement.classList.contains('dark');
+                this.setTheme(!isCurrentlyDark);
             });
         }
+    },
+
+    setTheme(isDark) {
+        const btnTheme = document.getElementById('btn-toggle-theme');
+        if (isDark) {
+            document.documentElement.classList.add('dark');
+            localStorage.setItem('theme', 'dark');
+            if (btnTheme) {
+                btnTheme.innerHTML = '<i data-lucide="sun" class="w-4 h-4 text-amber-400"></i>';
+                btnTheme.setAttribute('title', 'تغییر به حالت روز (روشن)');
+            }
+        } else {
+            document.documentElement.classList.remove('dark');
+            localStorage.setItem('theme', 'light');
+            if (btnTheme) {
+                btnTheme.innerHTML = '<i data-lucide="moon" class="w-4 h-4 text-gray-700"></i>';
+                btnTheme.setAttribute('title', 'تغییر به حالت شب (تاریک)');
+            }
+        }
+        if (window.lucide) lucide.createIcons();
     },
 
     toast(message, type = 'info') {
