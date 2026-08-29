@@ -1,0 +1,197 @@
+:root {
+    --bg-main: #ffffff;
+    --text-main: #1f2937;
+    --sidebar-bg: #f9fafb;
+}
+
+.dark {
+    --bg-main: #212121;
+    --text-main: #ececec;
+    --sidebar-bg: #171717;
+}
+
+body {
+    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(156, 163, 175, 0.35);
+    border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(156, 163, 175, 0.6);
+}
+
+.prose-custom {
+    line-height: 1.75;
+    font-size: 0.9rem;
+}
+.prose-custom p {
+    margin-bottom: 0.75rem;
+}
+.prose-custom p:last-child {
+    margin-bottom: 0;
+}
+
+/* Code Block & Wrapper Styling */
+.code-block-wrapper {
+    position: relative;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    margin: 1rem 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background-color: #141414;
+    direction: ltr !important;
+    text-align: left !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.code-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: #242424;
+    padding: 0.45rem 0.85rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    user-select: none;
+    direction: ltr !important;
+}
+
+.code-block-header .lang-tag {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: lowercase;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.copy-code-btn {
+    background: rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: 'Vazirmatn', sans-serif;
+    line-height: 1;
+}
+.copy-code-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+.prose-custom pre {
+    background-color: #141414 !important;
+    border-radius: 0.75rem;
+    padding: 1rem !important;
+    margin: 0.85rem 0;
+    overflow-x: auto;
+    direction: ltr !important;
+    text-align: left !important;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.84rem;
+    line-height: 1.65;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* When wrapped inside .code-block-wrapper */
+.code-block-wrapper pre {
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background-color: transparent !important;
+}
+
+/* Fallback if copy button is placed directly inside pre without header wrapper */
+.prose-custom pre:has(.copy-code-btn) {
+    padding-top: 2.85rem !important;
+}
+.prose-custom pre > .copy-code-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.6rem;
+    z-index: 10;
+}
+
+.prose-custom code {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.82rem;
+    background: rgba(120, 120, 120, 0.15);
+    padding: 0.15rem 0.35rem;
+    border-radius: 0.35rem;
+    direction: ltr !important;
+}
+
+.prose-custom pre code {
+    background: transparent;
+    padding: 0;
+}
+
+.prose-custom ul {
+    list-style-type: disc;
+    padding-right: 1.25rem;
+    margin-bottom: 0.75rem;
+}
+.prose-custom ol {
+    list-style-type: decimal;
+    padding-right: 1.25rem;
+    margin-bottom: 0.75rem;
+}
+.prose-custom h1, .prose-custom h2, .prose-custom h3 {
+    font-weight: 700;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+}
+.prose-custom h1 { font-size: 1.25rem; }
+.prose-custom h2 { font-size: 1.1rem; }
+.prose-custom h3 { font-size: 0.95rem; }
+
+[dir="rtl"] {
+    text-align: right;
+}
+[dir="ltr"] {
+    text-align: left;
+}
+
+/* Sidebar Smooth Collapse & Expand */
+#sidebar {
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.2s ease,
+                margin 0.25s ease;
+    will-change: width, opacity;
+}
+
+#sidebar.sidebar-collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    border-left-width: 0 !important;
+    border-right-width: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+}
