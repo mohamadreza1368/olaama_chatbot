@@ -12,14 +12,14 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
 - **Smart Title Generation**: Automatically summarizes the first user prompt into a concise, meaningful title.
 - **Markdown & Code Highlighting**: Full Markdown rendering with syntax highlighting and dedicated code block copy buttons.
 - **Auto RTL / LTR Detection**: Automatic text direction and alignment for Persian/Arabic (RTL) and English/Code (LTR).
-- **Collapsible Sidebar**: Smooth transition sidebar with keyboard shortcut (Ctrl + B / Cmd + B) and persistent state.
+- **Collapsible Sidebar**: Smooth transition sidebar with keyboard shortcut (`Ctrl + B` / `Cmd + B`) and persistent state.
 - **Theme Support**: Seamless Dark Mode and Light Mode switching.
 
 ### 2. 📄 Document Intelligence (Multi-Format File Support)
-- **PDF Documents (.pdf)**: Text extraction via pypdf.
-- **Microsoft Word (.docx)**: Structured extraction of headings, paragraphs, and tables via python-docx.
-- **Microsoft Excel (.xlsx, .xls)**: Tabular parsing across sheets with formatted rows via openpyxl.
-- **Plain Text & Code Files (.txt, .py, .json, .csv, etc.)**: Direct UTF-8 extraction.
+- **PDF Documents (`.pdf`)**: Text extraction via `pypdf`.
+- **Microsoft Word (`.docx`)**: Structured extraction of headings, paragraphs, and tables via `python-docx`.
+- **Microsoft Excel (`.xlsx`, `.xls`)**: Tabular parsing across sheets with formatted rows via `openpyxl`.
+- **Plain Text & Code Files (`.txt`, `.py`, `.json`, `.csv`, etc.)**: Direct UTF-8 extraction.
 - **Zero-Prompt Auto-Summary**: If a user uploads a document without typing a question, the AI automatically analyzes the document and provides a comprehensive structured summary (purpose, key points, data tables, and conclusion).
 
 ### 3. ⚙️ Admin Control Panel (Admin Hub)
@@ -32,7 +32,7 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
 
 ### 4. 🚦 Fair-Usage Request Queue (FIFO)
 - Single-worker queue processing to prevent local GPU/CPU overload when multiple users query the model concurrently.
-- Floating live queue notification popup showing user position (Waiting in queue: #1).
+- Floating live queue notification popup showing user position (`Waiting in queue: #1`).
 
 ### 5. ⚡ Token Quota & Daily Auto-Reset
 - Configurable daily token quotas per user (e.g. 50,000 to 500,000+ tokens).
@@ -49,10 +49,10 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
 | Layer | Technology |
 |---|---|
 | **Backend Framework** | FastAPI (Python 3.10+) |
-| **AI Runtime** | Ollama Local LLM (qwen:0.5b, llama3, deepseek-r1, mistral, etc.) |
+| **AI Runtime** | Ollama Local LLM (`qwen:0.5b`, `llama3`, `deepseek-r1`, `mistral`, etc.) |
 | **Database & ORM** | SQLite + SQLAlchemy 2.0 |
 | **Security & Auth** | JWT Tokens + BCrypt password hashing |
-| **Document Processing** | pypdf, python-docx, openpyxl |
+| **Document Processing** | `pypdf`, `python-docx`, `openpyxl` |
 | **Frontend UI** | HTML5, Tailwind CSS, Vanilla JS, Lucide Icons, Marked.js, Highlight.js |
 
 ---
@@ -62,37 +62,36 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
 ### Prerequisites
 1. **Python 3.10+** installed on your system.
 2. **Ollama** installed and running locally:
-   `ash
+   ```bash
    ollama run qwen:0.5b
-   `
+   ```
 
 ### Installation
 
 1. **Clone the repository**:
-   `ash
+   ```bash
    git clone https://github.com/mohamadreza1368/olaama_chatbot.git
    cd olaama_chatbot
-   `
+   ```
 
 2. **Install dependencies**:
-   `ash
+   ```bash
    pip install -r requirements.txt
-   `
+   ```
 
 3. **Run the server**:
-   - **Windows Batch**: Double-click 
-un.bat or execute:
-     `ash
-     .\run.bat
-     `
+   - **Windows Batch**: Double-click `run.bat` or execute:
+     ```cmd
+     run.bat
+     ```
    - **PowerShell**:
-     `powershell
+     ```powershell
      .\run.ps1
-     `
+     ```
    - **Direct Command**:
-     `ash
+     ```bash
      python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-     `
+     ```
 
 4. **Access the application**:
    Open your browser and navigate to:
@@ -104,7 +103,7 @@ un.bat or execute:
 
 | Role | Username | Password |
 |---|---|---|
-| **Administrator** | dmin | dmin123 |
+| **Administrator** | `admin` | `admin123` |
 
 *(New standard user accounts can be created by the Administrator inside the Admin Hub).*
 
@@ -112,7 +111,7 @@ un.bat or execute:
 
 ## 📁 Project Structure
 
-`
+```text
 olaama_chatbot/
 ├── app/
 │   ├── main.py                 # FastAPI application entry point & lifecycle
@@ -141,7 +140,7 @@ olaama_chatbot/
 ├── test_suite.py               # Unit test suite
 ├── test_new_features.py        # Feature verification tests
 └── test_e2e_api.py             # End-to-end API integration tests
-`
+```
 
 ---
 
@@ -149,11 +148,11 @@ olaama_chatbot/
 
 Run the automated test suites to verify backend health, document parsers, and API endpoints:
 
-`ash
+```bash
 python test_suite.py
 python test_new_features.py
 python test_e2e_api.py
-`
+```
 
 ---
 
