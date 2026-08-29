@@ -1,3 +1,40 @@
+/* ============================================================
+   LOCAL VAZIRMATN FONT DEFINITIONS (100% Offline / Self-Hosted)
+   ============================================================ */
+@font-face {
+    font-family: 'Vazirmatn';
+    src: url('/static/fonts/Vazirmatn-Regular.woff2') format('woff2'),
+         url('/static/fonts/Vazirmatn-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    src: url('/static/fonts/Vazirmatn-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    src: url('/static/fonts/Vazirmatn-SemiBold.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    src: url('/static/fonts/Vazirmatn-Bold.woff2') format('woff2'),
+         url('/static/fonts/Vazirmatn-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
 :root {
     --bg-main: #ffffff;
     --text-main: #1f2937;
@@ -12,6 +49,10 @@
 
 body {
     font-family: 'Vazirmatn', 'Vazir', 'Tahoma', 'Segoe UI', 'IranSans', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+}
+
+button {
+    cursor: pointer;
 }
 
 .hidden {
