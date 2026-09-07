@@ -16,14 +16,34 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install minimal OS dependencies for container health checks
-RUN apt-get update && \
+# Configure internal Debian repository mirror (IME repository)
+ARG DEBIAN_MIRROR=https://linux.repo.ime.co.ir/repository/debian
+
+RUN if [ -n "$DEBIAN_MIRROR" ]; then \
+        echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99insecure-https && \
+        echo 'Acquire::https::Verify-Host "false";' >> /etc/apt/apt.conf.d/99insecure-https && \
+        echo 'Acquire::Check-Valid-Until "false";' >> /etc/apt/apt.conf.d/99insecure-https && \
+        find /etc/apt/ -type f \( -name "*.list" -o -name "*.sources" \) -exec sed -i \
+            -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+            -e "s|https://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+            -e "s|http://security.debian.org/debian-security|${DEBIAN_MIRROR}|g" \
+            -e "s|https://security.debian.org/debian-security|${DEBIAN_MIRROR}|g" \
+            -e "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" \
+            -e "s|https://deb.debian.org|${DEBIAN_MIRROR}|g" \
+            {} + ; \
+    fi && \
+    apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies (cached layer)
+ARG PIP_INDEX_URL=""
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN if [ -n "$PIP_INDEX_URL" ]; then \
+        pip config set global.index-url "$PIP_INDEX_URL" && \
+        pip config set global.trusted-host "$(echo "$PIP_INDEX_URL" | awk -F/ '{print $3}' | cut -d: -f1)"; \
+    fi && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy Application Code & Assets
 COPY app /app/app

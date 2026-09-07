@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
       args:
         DOCKER_MIRROR: ${DOCKER_MIRROR:-dockehub.ime.co.ir/}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://linux.repo.ime.co.ir/repository/debian}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
     container_name: ime_ollama_chatbot
     restart: unless-stopped
     env_file:

@@ -143,13 +143,18 @@ Deploy the application effortlessly in an isolated, production-ready container.
    docker compose down
    ```
 
-### 🪞 Docker Registry Mirror (مخزن میرور داکر)
+### 🪞 Mirrors & Internal Repositories (میرور داکر و مخزن پکیج‌های سیستم‌عامل)
 
-پروژه به صورت پیش‌فرض با مخزن میرور داخلی `dockehub.ime.co.ir` پیکربندی شده است:
-- در فایل `.env`: متغیر `DOCKER_MIRROR=dockehub.ime.co.ir/` قرار دارد.
-- در `Dockerfile` و `docker-compose.yml`: ایمیج پایه `python:3.10-slim` به صورت خودکار از `dockehub.ime.co.ir/python:3.10-slim` دریافت می‌شود.
+پروژه به صورت پیش‌فرض با مخازن داخلی سازمان پیکربندی شده است:
+1. **داکر میرور (`dockehub.ime.co.ir`)**:
+   - در فایل `.env`: متغیر `DOCKER_MIRROR=dockehub.ime.co.ir/`
+   - ایمیج پایه پایتون از `dockehub.ime.co.ir/python:3.10-slim` دریافت می‌شود.
 
-همچنین می‌توانید این میرور را به صورت سراسری در تنظیمات داکر (`daemon.json` یا Docker Desktop -> Settings -> Docker Engine) اعمال کنید:
+2. **مخزن لینوکس دبیان (`linux.repo.ime.co.ir`)**:
+   - در فایل `.env`: متغیر `DEBIAN_MIRROR=https://linux.repo.ime.co.ir/repository/debian`
+   - دستور `apt-get update` و نصب پیش‌نیازها در `Dockerfile` به صورت خودکار به این مخزن داخلی هدایت می‌شود.
+
+همچنین می‌توانید داکر میرور را به صورت سراسری در تنظیمات داکر (`daemon.json` یا Docker Desktop -> Settings -> Docker Engine) اعمال کنید:
 ```json
 {
   "registry-mirrors": ["https://dockehub.ime.co.ir/"]
