@@ -24,6 +24,14 @@ except ImportError:
                     val = val.strip().strip('"\'')
                     os.environ[key] = val
 
+def _resolve_ollama_url() -> str:
+    raw_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    # If running inside Docker and pointing to loopback, route to host machine
+    is_docker = os.path.exists("/.dockerenv") or os.getenv("IS_DOCKER") == "true"
+    if is_docker and ("127.0.0.1" in raw_url or "localhost" in raw_url):
+        return "http://host.docker.internal:11434"
+    return raw_url
+
 class Settings(BaseModel):
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "Ollama AI Assistant and Admin Hub")
     HOST: str = os.getenv("HOST", "127.0.0.1")
@@ -36,7 +44,7 @@ class Settings(BaseModel):
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24 * 7)))
 
-    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    OLLAMA_BASE_URL: str = _resolve_ollama_url()
     DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "qwen:0.5b")
 
     # Admin credentials - supports both ADMIN_USERNAME and DEFAULT_ADMIN_USERNAME
