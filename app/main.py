@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db, SessionLocal, User
-from app.auth import hash_password
+from app.auth import hash_password, verify_password
 from app.cleanup_service import cleanup_old_records
 from app.ollama_service import ollama_service
 from app.routers import auth_router, chat_router, api_router, admin_router
@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     init_db()
     print("[DB] SQLite database initialized.")
 
-    # 2. Seed Default Admin User if not exists
+    # 2. Seed or Synchronize Default Admin User
     db = SessionLocal()
     try:
         admin_user = db.query(User).filter(User.username == settings.DEFAULT_ADMIN_USERNAME).first()
@@ -47,10 +47,17 @@ async def lifespan(app: FastAPI):
             )
             db.add(admin_user)
             db.commit()
-            print(f"[Security] Default Admin created: username='{settings.DEFAULT_ADMIN_USERNAME}', password='{settings.DEFAULT_ADMIN_PASSWORD}'")
+            print(f"[Security] Default Admin created: username='{settings.DEFAULT_ADMIN_USERNAME}'")
         else:
+            updated = False
             if admin_user.role != "admin":
                 admin_user.role = "admin"
+                updated = True
+            if not verify_password(settings.DEFAULT_ADMIN_PASSWORD, admin_user.password_hash):
+                admin_user.password_hash = hash_password(settings.DEFAULT_ADMIN_PASSWORD)
+                updated = True
+                print(f"[Security] Admin password synchronized with environment config.")
+            if updated:
                 db.commit()
 
         # 3. Initial retention cleanup on startup
@@ -109,3 +116,7 @@ def serve_home(request: Request):
         name="index.html",
         context={"app_title": settings.PROJECT_NAME}
     )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)

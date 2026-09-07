@@ -1,4 +1,4 @@
-﻿import io
+import io
 import sys
 import unittest
 from fastapi.testclient import TestClient
@@ -30,8 +30,10 @@ class TestChatWithFile(unittest.TestCase):
             files = {
                 "file": ("sample_report.pdf", pdf_bytes, "application/pdf")
             }
+            import uuid
+            session_id = str(uuid.uuid4())
             data = {
-                "session_id": "test-pdf-sess-1",
+                "session_id": session_id,
                 "prompt": "لطفاً این فایل را بررسی کن",
                 "model": "qwen:0.5b"
             }

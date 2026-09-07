@@ -80,7 +80,19 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
    pip install -r requirements.txt
    ```
 
-3. **Run the server**:
+3. **Configure Environment Variables (`.env`)**:
+   An `.env` file is included in the project root. You can adjust your admin credentials, database URL, and Ollama settings directly:
+   ```env
+   ADMIN_USERNAME=admin
+   ADMIN_PASSWORD=admin123
+   OLLAMA_BASE_URL=http://127.0.0.1:11434
+   DEFAULT_MODEL=qwen:0.5b
+   DATABASE_URL=sqlite:///./chatbot.db
+   HOST=127.0.0.1
+   PORT=8000
+   ```
+
+4. **Run the server**:
    - **Windows Batch**: Double-click `run.bat` or execute:
      ```cmd
      run.bat
@@ -94,19 +106,19 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
      python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
      ```
 
-4. **Access the application**:
+5. **Access the application**:
    Open your browser and navigate to:
    👉 **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 
 ---
 
-## 🔑 Default Credentials
+## 🔑 Default Credentials & Admin Access
 
-| Role | Username | Password |
-|---|---|---|
-| **Administrator** | `admin` | `admin123` |
+| Role | Username | Password | Configured In |
+|---|---|---|---|
+| **Administrator** | `admin` *(or custom)* | `admin123` *(or custom)* | `.env` (`ADMIN_USERNAME`, `ADMIN_PASSWORD`) |
 
-*(New standard user accounts can be created by the Administrator inside the Admin Hub).*
+*(When you change `ADMIN_USERNAME` or `ADMIN_PASSWORD` in `.env`, credentials are automatically synchronized upon server startup. New standard user accounts can be created by the Administrator inside the Admin Hub).*
 
 ---
 
