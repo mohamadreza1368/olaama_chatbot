@@ -106,8 +106,8 @@ app.include_router(admin_router.router)
 def health_check():
     return {
         "status": "healthy",
-        "service": settings.PROJECT_NAME,
-        "environment": settings.ENVIRONMENT
+        "service": getattr(settings, "PROJECT_NAME", "Ollama AI Assistant and Admin Hub"),
+        "environment": getattr(settings, "ENVIRONMENT", os.getenv("ENVIRONMENT", "production"))
     }
 
 @app.get("/")
