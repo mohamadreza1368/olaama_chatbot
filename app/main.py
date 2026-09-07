@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db, SessionLocal, User
-from app.auth import hash_password, verify_password
+from app.auth import hash_password
 from app.cleanup_service import cleanup_old_records
 from app.ollama_service import ollama_service
 from app.routers import auth_router, chat_router, api_router, admin_router
@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     init_db()
     print("[DB] SQLite database initialized.")
 
-    # 2. Seed or Synchronize Default Admin User
+    # 2. Seed Default Admin User if not exists
     db = SessionLocal()
     try:
         admin_user = db.query(User).filter(User.username == settings.DEFAULT_ADMIN_USERNAME).first()
@@ -47,17 +47,10 @@ async def lifespan(app: FastAPI):
             )
             db.add(admin_user)
             db.commit()
-            print(f"[Security] Default Admin created: username='{settings.DEFAULT_ADMIN_USERNAME}'")
+            print(f"[Security] Default Admin created: username='{settings.DEFAULT_ADMIN_USERNAME}', password='{settings.DEFAULT_ADMIN_PASSWORD}'")
         else:
-            updated = False
             if admin_user.role != "admin":
                 admin_user.role = "admin"
-                updated = True
-            if not verify_password(settings.DEFAULT_ADMIN_PASSWORD, admin_user.password_hash):
-                admin_user.password_hash = hash_password(settings.DEFAULT_ADMIN_PASSWORD)
-                updated = True
-                print(f"[Security] Admin password synchronized with environment config.")
-            if updated:
                 db.commit()
 
         # 3. Initial retention cleanup on startup
@@ -109,6 +102,14 @@ app.include_router(chat_router.router)
 app.include_router(api_router.router)
 app.include_router(admin_router.router)
 
+@app.get("/api/health", tags=["Health"])
+def health_check():
+    return {
+        "status": "healthy",
+        "service": settings.PROJECT_NAME,
+        "environment": settings.ENVIRONMENT
+    }
+
 @app.get("/")
 def serve_home(request: Request):
     return templates.TemplateResponse(
@@ -116,7 +117,3 @@ def serve_home(request: Request):
         name="index.html",
         context={"app_title": settings.PROJECT_NAME}
     )
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)

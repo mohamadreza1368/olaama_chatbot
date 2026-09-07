@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  chatbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ime_ollama_chatbot
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      # Persist SQLite database across container recreations
+      - ./chatbot.db:/app/chatbot.db
+      # Persist skills directory for admin uploads
+      - ./skills:/app/skills
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - ENVIRONMENT=production
+      - DEBUG=False
+      # Connect to host Ollama service via host.docker.internal
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-qwen:0.5b}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-super-secret-jwt-key-change-in-production-2026}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - RETENTION_DAYS=${RETENTION_DAYS:-10}
+      - MAX_MEMORY_MESSAGES=${MAX_MEMORY_MESSAGES:-12}
+    extra_hosts:
+      # Allows Linux, Mac, and Windows Docker engines to reach host services
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Bundled Ollama container (if running Ollama directly inside Docker)
+  # To run with Ollama container: docker compose --profile with-ollama up -d
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ime_ollama_service
+    profiles: ["with-ollama"]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:
+

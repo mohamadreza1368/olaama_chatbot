@@ -13,9 +13,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Loading configuration from .env...
-echo Starting FastAPI server at http://127.0.0.1:8000 (configurable via HOST/PORT in .env)
-echo Admin credentials configured in .env (Default: admin / admin123)
+echo Starting FastAPI server at http://127.0.0.1:8000
+echo Default Admin credentials: admin / admin123
 echo.
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 pause

@@ -112,6 +112,57 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
 
 ---
 
+## 🐳 Docker Deployment
+
+Deploy the application effortlessly in an isolated, production-ready container.
+
+### Option A: Docker Compose (Recommended)
+
+1. **(Optional) Configure environment variables**:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Build and start the container**:
+   ```bash
+   docker compose up -d --build
+   ```
+
+   > [!NOTE]
+   > - The container automatically connects to Ollama running on your host machine via `http://host.docker.internal:11434`.
+   > - SQLite data (`chatbot.db`) and uploaded skills (`skills/`) are persisted on the host through Docker volume mounts.
+   > - Built-in health checks verify container availability at `/api/health`.
+
+3. **View logs**:
+   ```bash
+   docker compose logs -f
+   ```
+
+4. **Stop the service**:
+   ```bash
+   docker compose down
+   ```
+
+### Option B: Docker CLI
+
+```bash
+# 1. Build image
+docker build -t ime-ollama-chatbot .
+
+# 2. Run container with persistence & host network access
+docker run -d \
+  --name ime_ollama_chatbot \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -v "$(pwd)/chatbot.db:/app/chatbot.db" \
+  -v "$(pwd)/skills:/app/skills" \
+  --add-host=host.docker.internal:host-gateway \
+  -e OLLAMA_BASE_URL="http://host.docker.internal:11434" \
+  ime-ollama-chatbot
+```
+
+---
+
 ## 🔑 Default Credentials & Admin Access
 
 | Role | Username | Password | Configured In |
