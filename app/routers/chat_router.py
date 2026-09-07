@@ -7,11 +7,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from app.database import get_db, User, ChatSession, ChatMessage, PromptLog, get_system_model, get_system_prompt, get_reference_prompts, check_and_reset_user_daily_tokens
+from app.database import get_db, User, ChatSession, ChatMessage, PromptLog, Skill, get_system_model, get_system_prompt, get_reference_prompts, check_and_reset_user_daily_tokens, get_active_skills
 from app.auth import get_current_user
 from app.ollama_service import ollama_service
 from app.queue_service import request_queue
 from app.document_parser import extract_text_from_file
+from app.security_service import security_service
 from app.config import settings
 
 router = APIRouter(prefix="/api/chat", tags=["Chat & Sessions"])
@@ -43,6 +44,18 @@ def generate_smart_title(prompt: str) -> str:
 async def get_models(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     sys_model = get_system_model(db)
     return {"active_model": sys_model}
+
+@router.get("/skills")
+def get_active_skills_chat(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    skills = get_active_skills(db)
+    return [
+        {
+            "id": s.id,
+            "name": s.name,
+            "description": s.description
+        }
+        for s in skills
+    ]
 
 @router.get("/sessions")
 def get_sessions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -97,6 +110,7 @@ def get_session_details(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    session_id = security_service.validate_session_id(session_id)
     sess = db.query(ChatSession).filter(
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id
@@ -133,6 +147,7 @@ def update_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    session_id = security_service.validate_session_id(session_id)
     sess = db.query(ChatSession).filter(
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id
@@ -141,7 +156,7 @@ def update_session(
         raise HTTPException(status_code=404, detail="Chat session not found")
     
     if title is not None:
-        sess.title = title.strip()
+        sess.title = title.strip()[:200]
     if system_prompt is not None:
         sess.system_prompt = system_prompt.strip()
     
@@ -155,6 +170,7 @@ def delete_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    session_id = security_service.validate_session_id(session_id)
     sess = db.query(ChatSession).filter(
         ChatSession.id == session_id,
         ChatSession.user_id == current_user.id
@@ -171,14 +187,27 @@ async def send_message(
     request: Request,
     session_id: str = Form(...),
     prompt: Optional[str] = Form(""),
+    skill_id: Optional[int] = Form(None),
     system_prompt: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Validate session_id format to prevent SQL / Path Injection
+    session_id = security_service.validate_session_id(session_id)
+
     # Check if at least prompt or file is provided
     if not (prompt and prompt.strip()) and not file:
         raise HTTPException(status_code=400, detail="لطفاً متن پیام یا فایلی را برای ارسال مشخص کنید.")
+
+    # Defense against Prompt Injection in user text prompt
+    if prompt and prompt.strip():
+        is_inj, inj_reason = security_service.detect_prompt_injection(prompt)
+        if is_inj:
+            raise HTTPException(
+                status_code=400,
+                detail=f"درخواست شما به دلیل وجود الگوهای غیرمجاز امنیتی (Prompt Injection) مسدود شد: {inj_reason}"
+            )
 
     # 0. Check and Reset User Daily Token Quota
     check_and_reset_user_daily_tokens(current_user, db)
@@ -197,6 +226,15 @@ async def send_message(
         if len(file_bytes) > settings.UPLOAD_MAX_BYTES:
             raise HTTPException(status_code=400, detail="حجم فایل ارسالی بیش از ۱۵ مگابایت است.")
         doc_text = extract_text_from_file(doc_name, file_bytes)
+
+        # Defense against Indirect Prompt Injection in uploaded documents
+        if doc_text:
+            is_inj, inj_reason = security_service.detect_prompt_injection(doc_text)
+            if is_inj:
+                raise HTTPException(
+                    status_code=400,
+                    detail="فایل ارسالی شامل الگوهای غیرمجاز امنیتی (Indirect Prompt Injection) است و پردازش آن متوقف شد."
+                )
 
     # 2. Compute Title & Content
     user_prompt_clean = prompt.strip() if prompt else ""
@@ -238,6 +276,28 @@ async def send_message(
             db.commit()
     
     active_system_prompt = system_prompt if (system_prompt and system_prompt.strip()) else (sess.system_prompt or global_system_prompt)
+
+    # 3.1 Prioritize selected skill (via skill_id or prompt slash trigger) or load active skills
+    selected_skill = None
+    if skill_id:
+        selected_skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    elif user_prompt_clean:
+        skill_tag_match = re.match(r'^(?:\[(?:مهارت|Skill):\s*([^\]]+)\]|/([\w\u0600-\u06FF\-_]+))\s*', user_prompt_clean)
+        if skill_tag_match:
+            target_name = (skill_tag_match.group(1) or skill_tag_match.group(2)).strip()
+            escaped_target = security_service.escape_sql_like(target_name)
+            selected_skill = db.query(Skill).filter(Skill.name.ilike(f"%{escaped_target}%")).first()
+
+    if selected_skill:
+        skills_block = f"\n\n### 🎯 مهارت تخصصی منتخب کاربر ({selected_skill.name}):\n{selected_skill.content.strip()}"
+        active_system_prompt += skills_block
+    else:
+        active_skills = get_active_skills(db)
+        if active_skills:
+            skills_blocks = ["\n\n### دستورالعمل‌ها و مهارت‌های تخصصی فعال (Active Skills):"]
+            for sk in active_skills:
+                skills_blocks.append(f"\n\n#### مهارت: {sk.name}\n{sk.content.strip()}")
+            active_system_prompt += "".join(skills_blocks)
 
     # 4. Store User Message in DB
     user_msg = ChatMessage(

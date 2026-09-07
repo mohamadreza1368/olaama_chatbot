@@ -196,6 +196,26 @@ const App = {
                 adminBtn.classList.add('hidden');
             }
         }
+
+        this.loadActiveSkillsBadge();
+    },
+
+    async loadActiveSkillsBadge() {
+        try {
+            if (!this.token) return;
+            const res = await fetch('/api/chat/skills', {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (res.ok) {
+                const skills = await res.json();
+                const countEl = document.getElementById('active-skills-count-display');
+                if (countEl) {
+                    countEl.textContent = `${skills.length} مهارت فعال`;
+                }
+            }
+        } catch (e) {
+            console.error('Error loading active skills:', e);
+        }
     },
 
     showAuthModal() {

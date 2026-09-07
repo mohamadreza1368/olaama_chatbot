@@ -45,13 +45,150 @@ const Chat = {
     currentSessionId: null,
     sessions: [],
     selectedFile: null,
+    selectedSkill: null,
+    availableSkills: [],
+    slashFilteredSkills: [],
+    activeSlashIndex: 0,
+    isSlashOpen: false,
     isStreaming: false,
 
     init() {
         this.loadActiveModel();
         this.loadSessions();
+        this.loadSkillsForSlash();
         this.setupEvents();
         this.setupAutoDirection();
+    },
+
+    async loadSkillsForSlash() {
+        try {
+            const res = await fetch('/api/chat/skills', {
+                headers: { 'Authorization': `Bearer ${App.token}` }
+            });
+            if (res.ok) {
+                this.availableSkills = await res.json();
+            }
+        } catch (e) {
+            console.error('Failed to load chat skills:', e);
+        }
+    },
+
+    selectSkill(skill) {
+        this.selectedSkill = skill;
+        const chip = document.getElementById('selected-skill-chip');
+        const nameEl = document.getElementById('selected-skill-name');
+        if (chip && nameEl) {
+            nameEl.textContent = skill.name;
+            chip.classList.remove('hidden');
+            chip.classList.add('flex');
+        }
+        this.closeSlashPopup();
+
+        const input = document.getElementById('chat-input');
+        if (input) {
+            if (input.value.startsWith('/')) {
+                input.value = '';
+                input.style.height = 'auto';
+            }
+            input.focus();
+        }
+        if (window.lucide) lucide.createIcons();
+        App.toast(`مهارت "${skill.name}" فعال شد`, 'success');
+    },
+
+    removeSelectedSkill() {
+        this.selectedSkill = null;
+        const chip = document.getElementById('selected-skill-chip');
+        if (chip) {
+            chip.classList.add('hidden');
+            chip.classList.remove('flex');
+        }
+        App.toast('مهارت انتخابی حذف شد', 'info');
+    },
+
+    openSlashPopup(query = '') {
+        const cleanQuery = query.toLowerCase().trim();
+        if (!cleanQuery) {
+            this.slashFilteredSkills = [...this.availableSkills];
+        } else {
+            this.slashFilteredSkills = this.availableSkills.filter(s =>
+                (s.name && s.name.toLowerCase().includes(cleanQuery)) ||
+                (s.description && s.description.toLowerCase().includes(cleanQuery))
+            );
+        }
+
+        this.activeSlashIndex = 0;
+        this.renderSlashList();
+
+        const popup = document.getElementById('skills-slash-popup');
+        if (popup) {
+            popup.classList.remove('hidden');
+            this.isSlashOpen = true;
+            this.updateSlashActiveItem();
+            if (window.lucide) lucide.createIcons();
+        }
+    },
+
+    closeSlashPopup() {
+        const popup = document.getElementById('skills-slash-popup');
+        if (popup) {
+            popup.classList.add('hidden');
+        }
+        this.isSlashOpen = false;
+        this.slashFilteredSkills = [];
+    },
+
+    renderSlashList() {
+        const listEl = document.getElementById('skills-slash-list');
+        if (!listEl) return;
+
+        if (this.slashFilteredSkills.length === 0) {
+            listEl.innerHTML = `
+                <div class="px-4 py-3 text-center text-xs text-gray-400">
+                    مهارتی منطبق با این عبارت یافت نشد.
+                </div>
+            `;
+            return;
+        }
+
+        listEl.innerHTML = this.slashFilteredSkills.map((skill, idx) => `
+            <button type="button" class="w-full text-right px-3 py-2 rounded-xl transition flex items-start gap-2.5 cursor-pointer slash-item ${idx === this.activeSlashIndex ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' : 'hover:bg-gray-100 dark:hover:bg-[#282828] text-gray-700 dark:text-gray-200'}" data-index="${idx}">
+                <div class="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="font-bold text-xs truncate">${skill.name}</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">${skill.description || 'بدون توضیح'}</p>
+                </div>
+            </button>
+        `).join('');
+
+        listEl.querySelectorAll('.slash-item').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const idx = parseInt(btn.getAttribute('data-index'), 10);
+                if (!isNaN(idx) && this.slashFilteredSkills[idx]) {
+                    this.selectSkill(this.slashFilteredSkills[idx]);
+                }
+            });
+        });
+    },
+
+    updateSlashActiveItem() {
+        const listEl = document.getElementById('skills-slash-list');
+        if (!listEl) return;
+        const items = listEl.querySelectorAll('.slash-item');
+        items.forEach((item, idx) => {
+            if (idx === this.activeSlashIndex) {
+                item.className = 'w-full text-right px-3 py-2 rounded-xl transition flex items-start gap-2.5 cursor-pointer slash-item bg-amber-500/15 text-amber-300 border border-amber-500/30';
+                item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            } else {
+                item.className = 'w-full text-right px-3 py-2 rounded-xl transition flex items-start gap-2.5 cursor-pointer slash-item hover:bg-gray-100 dark:hover:bg-[#282828] text-gray-700 dark:text-gray-200';
+            }
+        });
     },
 
     isRTLText(text) {
@@ -70,7 +207,8 @@ const Chat = {
             input.style.height = 'auto';
             input.style.height = Math.min(input.scrollHeight, 180) + 'px';
 
-            const val = input.value.trim();
+            const rawVal = input.value;
+            const val = rawVal.trim();
             if (val) {
                 const rtl = this.isRTLText(val);
                 input.setAttribute('dir', rtl ? 'rtl' : 'ltr');
@@ -78,9 +216,50 @@ const Chat = {
             } else {
                 input.setAttribute('dir', 'auto');
             }
+
+            // Slash popup trigger check
+            if (rawVal.startsWith('/')) {
+                const query = rawVal.substring(1);
+                this.openSlashPopup(query);
+            } else {
+                if (this.isSlashOpen) {
+                    this.closeSlashPopup();
+                }
+            }
         });
 
         input.addEventListener('keydown', (e) => {
+            if (this.isSlashOpen) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (this.slashFilteredSkills.length > 0) {
+                        this.activeSlashIndex = (this.activeSlashIndex + 1) % this.slashFilteredSkills.length;
+                        this.updateSlashActiveItem();
+                    }
+                    return;
+                }
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (this.slashFilteredSkills.length > 0) {
+                        this.activeSlashIndex = (this.activeSlashIndex - 1 + this.slashFilteredSkills.length) % this.slashFilteredSkills.length;
+                        this.updateSlashActiveItem();
+                    }
+                    return;
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                    if (this.slashFilteredSkills.length > 0) {
+                        e.preventDefault();
+                        this.selectSkill(this.slashFilteredSkills[this.activeSlashIndex]);
+                        return;
+                    }
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    this.closeSlashPopup();
+                    return;
+                }
+            }
+
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.sendMessage();
@@ -111,6 +290,20 @@ const Chat = {
         if (removeFileBtn) {
             removeFileBtn.addEventListener('click', () => this.removeAttachedFile());
         }
+
+        const removeSkillBtn = document.getElementById('btn-remove-selected-skill');
+        if (removeSkillBtn) {
+            removeSkillBtn.addEventListener('click', () => this.removeSelectedSkill());
+        }
+
+        // Close slash popup when clicking outside
+        document.addEventListener('click', (e) => {
+            const popup = document.getElementById('skills-slash-popup');
+            const input = document.getElementById('chat-input');
+            if (this.isSlashOpen && popup && !popup.contains(e.target) && e.target !== input) {
+                this.closeSlashPopup();
+            }
+        });
 
         document.querySelectorAll('.quick-prompt-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -598,6 +791,9 @@ const Chat = {
         const formData = new FormData();
         formData.append('session_id', this.currentSessionId);
         formData.append('prompt', promptText);
+        if (this.selectedSkill && this.selectedSkill.id) {
+            formData.append('skill_id', this.selectedSkill.id);
+        }
         if (currentFile) {
             formData.append('file', currentFile);
         }

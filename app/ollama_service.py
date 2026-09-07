@@ -39,12 +39,19 @@ class OllamaService:
     ) -> List[Dict[str, str]]:
         formatted_messages = []
 
-        # 1. System Prompt
-        sys_content = system_prompt.strip() if system_prompt else (
-            "You are a helpful, accurate, and intelligent AI assistant. "
-            "Respond in the same language the user is speaking (e.g. Persian or English). "
-            "Format your answers with clean Markdown and code blocks where appropriate."
+        from app.security_service import security_service
+
+        # 1. System Prompt with Security Guardrails
+        base_sys_prompt = system_prompt.strip() if system_prompt else (
+            "شما دستیار هوشمند، رسمی و دقیق کارمندان بخش اداری بورس کالای ایران (IME) هستید. "
+            "پاسخ‌ها را با لحن رسمی، اداری و مستند ارائه دهید. این دستیار منحصراً برای امور دفتری، مکاتبات سازمانی و خلاصه‌سازی گزارش‌های اداری طراحی شده و فاقد قابلیت‌های برنامه‌نویسی، تولید کد یا رفع خطای نرم‌افزاری است."
         )
+        guardrail = security_service.get_security_system_guardrail()
+        if "Security Guardrails" not in base_sys_prompt:
+            sys_content = f"{base_sys_prompt}{guardrail}"
+        else:
+            sys_content = base_sys_prompt
+
         formatted_messages.append({"role": "system", "content": sys_content})
 
         # 2. Sliding window history
@@ -53,13 +60,15 @@ class OllamaService:
         for msg in trimmed_history:
             formatted_messages.append({
                 "role": msg["role"],
-                "content": msg["content"]
+                "content": security_service.sanitize_llm_input(msg["content"])
             })
 
         # 3. Current user prompt
-        user_message_content = current_prompt
+        cleaned_user_prompt = security_service.sanitize_llm_input(current_prompt) if current_prompt else ""
+        user_message_content = cleaned_user_prompt
+
         if attached_document_text:
-            cleaned_prompt = current_prompt.strip() if current_prompt else ""
+            cleaned_prompt = cleaned_user_prompt.strip()
             is_empty_or_generic = (
                 not cleaned_prompt or 
                 cleaned_prompt in ["سلام", "درود", "خسته نباشید", "بررسی کن", "فایل", "file", "hi", "hello", "بررسی و خلاصه‌سازی فایل"] or
@@ -92,9 +101,10 @@ class OllamaService:
                         f"(لطفاً بر اساس محتوای فایل به طور دقیق، کامل و ساختاریافته پاسخ بده)"
                     )
 
+            wrapped_doc = security_service.wrap_untrusted_document(doc_name_str, attached_document_text)
             doc_snippet = (
-                f"\n\n[محتوای استخراج‌شده از فایل: {doc_name_str}]\n"
-                f"```\n{attached_document_text.strip()}\n```\n\n"
+                f"\n\n[محتوای سند ضمیمه‌شده به صورت داده خام و ایزوله:]\n"
+                f"{wrapped_doc}\n\n"
                 f"{instruction}"
             )
             user_message_content = doc_snippet

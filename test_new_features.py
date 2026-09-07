@@ -122,7 +122,7 @@ class TestAdvancedFeaturesAndQueue(unittest.TestCase):
             reset_res = client.post("/api/admin/prompts/reset", headers=headers)
             self.assertEqual(reset_res.status_code, 200)
             reset_data = reset_res.json()["prompts"]
-            self.assertIn("helpful, accurate", reset_data["system_prompt"])
+            self.assertIn("بخش اداری", reset_data["system_prompt"])
             print("[PASS] Reference Prompts CRUD & Reset verified successfully")
 
 if __name__ == "__main__":

@@ -129,6 +129,12 @@
                                 <span id="active-model-display">qwen:0.5b</span>
                             </span>
                         </div>
+                        <div class="hidden sm:flex items-center gap-1.5" id="active-skills-header-chip" title="مهارت‌های تخصصی بارگذاری‌شده">
+                            <span class="text-xs px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 font-mono text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>
+                                <span id="active-skills-count-display">۰ مهارت فعال</span>
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -149,8 +155,8 @@
                         <button class="quick-prompt-btn text-xs text-right p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-[#2f2f2f] transition text-gray-700 dark:text-gray-300" data-prompt="لطفاً خودت را معرفی کن و بگو چه توانایی‌هایی داری؟">
                             💡 معرفی توانایی‌های دستیار هوش مصنوعی
                         </button>
-                        <button class="quick-prompt-btn text-xs text-right p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-[#2f2f2f] transition text-gray-700 dark:text-gray-300" data-prompt="یک نمونه کد پایتون برای خواندن و پردازش فایل بنویس.">
-                            💻 نوشتن یک نمونه کد پایتون
+                        <button class="quick-prompt-btn text-xs text-right p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-[#2f2f2f] transition text-gray-700 dark:text-gray-300" data-prompt="یک پیش‌نویس نامه اداری رسمی جهت هماهنگی جلسه سازمانی تنظیم کن.">
+                            📄 تنظیم پیش‌نویس نامه اداری رسمی
                         </button>
                     </div>
                 </div>
@@ -158,7 +164,20 @@
             </div>
 
             <div class="p-3 md:p-4 bg-white dark:bg-[#212121] border-t border-gray-200 dark:border-[#2f2f2f]">
-                <div class="max-w-3xl mx-auto flex flex-col gap-2">
+                <div class="max-w-3xl mx-auto flex flex-col gap-2 relative">
+                    <!-- Selected Skill Chip -->
+                    <div id="selected-skill-chip" class="hidden items-center justify-between px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-600 dark:text-amber-400 w-fit gap-2">
+                        <div class="flex items-center gap-1.5 truncate max-w-sm">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500 flex-shrink-0"></i>
+                            <span class="font-bold text-[11px]">مهارت انتخابی:</span>
+                            <span id="selected-skill-name" class="font-semibold truncate">مهارت</span>
+                        </div>
+                        <button id="btn-remove-selected-skill" type="button" class="hover:text-red-500 text-amber-500 p-0.5 cursor-pointer" title="لغو انتخاب این مهارت">
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+
+                    <!-- File Attachment Chip -->
                     <div id="file-attachment-chip" class="hidden items-center justify-between px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 w-fit gap-2">
                         <div class="flex items-center gap-1.5 truncate max-w-xs">
                             <i data-lucide="file-text" class="w-3.5 h-3.5 flex-shrink-0"></i>
@@ -169,12 +188,26 @@
                         </button>
                     </div>
 
+                    <!-- Skills Slash Command Autocomplete Floating Popup -->
+                    <div id="skills-slash-popup" class="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#383838] rounded-2xl shadow-2xl overflow-hidden z-40 hidden animate-fade-in">
+                        <div class="px-3.5 py-2 bg-gray-50 dark:bg-[#222] border-b border-gray-200 dark:border-[#2a2a2a] flex items-center justify-between text-xs">
+                            <span class="font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>
+                                <span>انتخاب مهارت تخصصی (Skills)</span>
+                            </span>
+                            <span class="text-[10px] text-gray-400 font-mono">↑↓ پیمایش | Enter انتخاب | Esc بستن</span>
+                        </div>
+                        <div id="skills-slash-list" class="max-h-64 overflow-y-auto p-1.5 space-y-1 custom-scrollbar">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
                     <div class="relative flex items-end gap-2 bg-gray-100 dark:bg-[#2f2f2f] border border-gray-300 dark:border-gray-700 rounded-2xl p-2 shadow-sm focus-within:border-emerald-500 transition-colors">
-                        <input type="file" id="file-upload-input" class="hidden" accept=".pdf,.docx,.doc,.xlsx,.xlsm,.xls,.csv,.txt,.md,.json,.py,.js,.html,.css,.log">
-                        <button id="btn-attach-file" class="p-2 text-gray-500 hover:text-emerald-500 rounded-xl hover:bg-gray-200 dark:hover:bg-[#3d3d3d] transition" title="پیوست فایل (PDF, Word, Excel, TXT)">
+                        <input type="file" id="file-upload-input" class="hidden" accept=".pdf,.docx,.doc,.xlsx,.xlsm,.xls,.csv,.txt,.md">
+                        <button id="btn-attach-file" class="p-2 text-gray-500 hover:text-emerald-500 rounded-xl hover:bg-gray-200 dark:hover:bg-[#3d3d3d] transition" title="پیوست سند اداری (PDF, Word, Excel, TXT)">
                             <i data-lucide="paperclip" class="w-5 h-5"></i>
                         </button>
-                        <textarea id="chat-input" rows="1" placeholder="پیام خود را بنویسید..." class="flex-1 bg-transparent resize-none border-0 outline-none text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 max-h-44 py-2 px-1 leading-relaxed custom-scrollbar" dir="auto"></textarea>
+                        <textarea id="chat-input" rows="1" placeholder="پیام خود را بنویسید... (برای انتخاب مهارت / را تایپ کنید)" class="flex-1 bg-transparent resize-none border-0 outline-none text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 max-h-44 py-2 px-1 leading-relaxed custom-scrollbar" dir="auto"></textarea>
                         <button id="btn-send-message" class="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center" title="ارسال پیام">
                             <i data-lucide="arrow-up" class="w-5 h-5"></i>
                         </button>
@@ -244,7 +277,7 @@
             </div>
 
             <!-- Stats Bar -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 p-4 bg-gray-100/50 dark:bg-[#1c1c1c] border-b border-gray-200 dark:border-[#2a2a2a]">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 p-4 bg-gray-100/50 dark:bg-[#1c1c1c] border-b border-gray-200 dark:border-[#2a2a2a]">
                 <div class="bg-white dark:bg-[#242424] p-3 rounded-xl border border-gray-200 dark:border-gray-800 text-center">
                     <span class="text-[11px] text-gray-400 block">کل کاربران</span>
                     <span class="text-lg font-bold text-emerald-500" id="stat-total-users">0</span>
@@ -262,26 +295,35 @@
                     <span class="text-lg font-bold text-amber-500" id="stat-total-logs">0</span>
                 </div>
                 <div class="bg-white dark:bg-[#242424] p-3 rounded-xl border border-gray-200 dark:border-gray-800 text-center">
+                    <span class="text-[11px] text-gray-400 block">مهارت‌های فعال / کل</span>
+                    <span class="text-lg font-bold text-amber-500" id="stat-total-skills">۰ / ۰</span>
+                </div>
+                <div class="bg-white dark:bg-[#242424] p-3 rounded-xl border border-gray-200 dark:border-gray-800 text-center">
                     <span class="text-[11px] text-gray-400 block">صف پردازش فعال</span>
                     <span class="text-lg font-bold text-cyan-500" id="stat-queue-count">0 منتظر</span>
                 </div>
             </div>
 
             <!-- Admin Navigation Tabs -->
-            <div class="flex border-b border-gray-200 dark:border-[#2a2a2a] px-4 bg-gray-50 dark:bg-[#161616] text-xs font-medium gap-2">
-                <button id="admin-tab-users" class="admin-tab-btn px-4 py-3 border-b-2 border-emerald-500 text-emerald-500 font-semibold flex items-center gap-2">
+            <div class="flex border-b border-gray-200 dark:border-[#2a2a2a] px-4 bg-gray-50 dark:bg-[#161616] text-xs font-medium gap-2 overflow-x-auto">
+                <button id="admin-tab-users" class="admin-tab-btn px-4 py-3 border-b-2 border-emerald-500 text-emerald-500 font-semibold flex items-center gap-2 flex-shrink-0">
                     <i data-lucide="users" class="w-4 h-4"></i>
                     <span>کاربران و بررسی سشن‌ها</span>
                 </button>
-                <button id="admin-tab-model" class="admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2">
+                <button id="admin-tab-skills" class="admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2 flex-shrink-0">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+                    <span>مدیریت مهارت‌ها (Skills)</span>
+                    <span id="badge-skills-count" class="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-mono">۰</span>
+                </button>
+                <button id="admin-tab-model" class="admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2 flex-shrink-0">
                     <i data-lucide="cpu" class="w-4 h-4"></i>
                     <span>تنظیم مدل و پرامپت‌های مرجع</span>
                 </button>
-                <button id="admin-tab-logs" class="admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2">
+                <button id="admin-tab-logs" class="admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2 flex-shrink-0">
                     <i data-lucide="file-clock" class="w-4 h-4"></i>
                     <span>لاگ پرامپت‌ها</span>
                 </button>
-                <button id="admin-tab-maintenance" class="admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2 mr-auto">
+                <button id="admin-tab-maintenance" class="admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2 mr-auto flex-shrink-0">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                     <span>پاکسازی ۱۰ روزه</span>
                 </button>
@@ -315,6 +357,125 @@
                             </tr>
                         </thead>
                         <tbody id="users-table-body" class="divide-y divide-gray-200 dark:divide-gray-800"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab: Skills -->
+            <div id="admin-panel-skills" class="flex-1 overflow-hidden flex flex-col p-4 hidden">
+                <!-- Header & Action Buttons -->
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="text-sm font-bold flex items-center gap-2">
+                            <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+                            <span>مدیریت مهارت‌های هوش مصنوعی (AI Skills - Markdown)</span>
+                        </h3>
+                        <p class="text-xs text-gray-400">فایل‌های .md مهارت را به صورت فایل تکی، فولدر کامل یا از طریق اسکن مسیر سرور بارگذاری کنید تا هوش مصنوعی به این دانش مجهز شود.</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <!-- Hidden inputs for file/folder/zip upload -->
+                        <input type="file" id="skills-single-file-input" class="hidden" accept=".md,.markdown,.txt" multiple>
+                        <input type="file" id="skills-folder-input" class="hidden" webkitdirectory directory multiple>
+                        <input type="file" id="skills-zip-input" class="hidden" accept=".zip">
+
+                        <!-- Action Buttons -->
+                        <button type="button" id="btn-skills-upload-single" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium flex items-center gap-1.5 shadow transition cursor-pointer" title="انتخاب یک یا چند فایل md">
+                            <i data-lucide="file-plus" class="w-4 h-4"></i>
+                            <span>افزودن فایل تکی (.md)</span>
+                        </button>
+                        <button type="button" id="btn-skills-upload-folder" class="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium flex items-center gap-1.5 shadow transition cursor-pointer" title="انتخاب کل یک پوشه از سیستم شما">
+                            <i data-lucide="folder-up" class="w-4 h-4"></i>
+                            <span>آپلود فولدر کامل</span>
+                        </button>
+                        <button type="button" id="btn-skills-upload-zip" class="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium flex items-center gap-1.5 shadow transition cursor-pointer" title="آپلود فایل فشرده zip">
+                            <i data-lucide="file-archive" class="w-4 h-4"></i>
+                            <span>آپلود فایل Zip</span>
+                        </button>
+                        <button type="button" id="btn-skills-toggle-scan-box" class="px-3 py-2 rounded-xl bg-gray-200 dark:bg-[#303030] hover:bg-gray-300 dark:hover:bg-[#3d3d3d] text-gray-700 dark:text-gray-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer" title="درون‌ریزی از یک مسیر محلی سرور/دیسک">
+                            <i data-lucide="hard-drive" class="w-4 h-4 text-cyan-400"></i>
+                            <span>اسکن مسیر سرور</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Server Path Scanner Inline Box (Collapsible) -->
+                <div id="skills-scan-path-container" class="hidden p-3.5 mb-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex flex-col sm:flex-row items-center gap-2">
+                    <div class="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 text-xs flex-shrink-0">
+                        <i data-lucide="folder-search" class="w-4 h-4"></i>
+                        <span class="font-bold">مسیر پوشه روی دیسک/سرور:</span>
+                    </div>
+                    <input type="text" id="skills-scan-path-input" placeholder="مثلاً: C:\my_skills یا ./skills" class="flex-1 w-full px-3 py-1.5 rounded-xl bg-white dark:bg-[#252525] border border-cyan-500/40 text-xs font-mono outline-none focus:ring-1 focus:ring-cyan-500 text-gray-800 dark:text-gray-100" dir="ltr">
+                    <button type="button" id="btn-submit-scan-path" class="px-4 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow flex items-center gap-1.5 flex-shrink-0 cursor-pointer">
+                        <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                        <span>اسکن و درون‌ریزی</span>
+                    </button>
+                </div>
+
+                <!-- Drag & Drop Zone -->
+                <div id="skills-drop-zone" class="border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl p-3.5 mb-3 text-center transition-colors bg-gray-50/50 dark:bg-[#1c1c1c] cursor-pointer">
+                    <div class="flex items-center justify-center gap-3">
+                        <div class="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                            <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 text-right">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">فایل‌های .md یا فولدر خود را به اینجا بکشید و رها کنید (Drag & Drop)</span>
+                            <span class="block text-[11px] text-gray-400">یا با دکمه‌های بالا فایل تکی، فولدر کامل یا فایل Zip را انتخاب نمایید.</span>
+                        </div>
+                    </div>
+                    <div id="skills-upload-spinner" class="hidden mt-2 text-xs text-emerald-500 font-semibold flex items-center justify-center gap-2">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                        <span id="skills-upload-status-text">در حال بارگذاری و پردازش مهارت‌ها...</span>
+                    </div>
+                </div>
+
+                <!-- Search, Filter & Bulk Actions -->
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <div class="flex items-center gap-2 flex-1 min-w-[220px]">
+                        <div class="relative w-full">
+                            <i data-lucide="search" class="w-4 h-4 absolute right-3 top-2.5 text-gray-400"></i>
+                            <input type="text" id="skills-search-input" placeholder="جستجو در عنوان، توضیحات یا متن مهارت‌ها..." class="w-full pr-9 pl-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#252525] border border-gray-300 dark:border-gray-700 text-xs outline-none focus:ring-1 focus:ring-emerald-500 text-gray-800 dark:text-gray-100">
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <select id="skills-filter-status" class="text-xs bg-gray-100 dark:bg-[#252525] border border-gray-300 dark:border-gray-700 rounded-xl px-3 py-1.5 outline-none text-gray-800 dark:text-gray-200">
+                            <option value="">همه مهارت‌ها</option>
+                            <option value="active">فقط فعال‌ها</option>
+                            <option value="inactive">فقط غیرفعال‌ها</option>
+                        </select>
+                        <button type="button" id="btn-skills-activate-all" class="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs flex items-center gap-1 transition" title="فعال‌سازی تمامی مهارت‌ها">
+                            <i data-lucide="check-check" class="w-3.5 h-3.5"></i>
+                            <span>فعال‌سازی همه</span>
+                        </button>
+                        <button type="button" id="btn-skills-deactivate-all" class="px-3 py-1.5 rounded-xl bg-gray-200 dark:bg-[#2c2c2c] hover:bg-gray-300 dark:hover:bg-[#383838] text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-700 text-xs flex items-center gap-1 transition" title="غیرفعال‌سازی تمامی مهارت‌ها">
+                            <i data-lucide="power-off" class="w-3.5 h-3.5"></i>
+                            <span>غیرفعال‌سازی همه</span>
+                        </button>
+                        <button type="button" id="btn-refresh-skills" class="p-2 rounded-xl bg-gray-100 dark:bg-[#252525] hover:bg-gray-200 dark:hover:bg-[#333] text-gray-600 dark:text-gray-300 text-xs flex items-center justify-center transition" title="تازه‌سازی">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Skills Table -->
+                <div class="flex-1 overflow-y-auto custom-scrollbar border border-gray-200 dark:border-gray-800 rounded-xl bg-white dark:bg-[#1e1e1e]">
+                    <table class="w-full text-right text-xs">
+                        <thead class="bg-gray-50 dark:bg-[#252525] text-gray-400 sticky top-0 border-b border-gray-200 dark:border-gray-800 z-10">
+                            <tr>
+                                <th class="p-3">عنوان مهارت</th>
+                                <th class="p-3">فایل / مسیر منبع</th>
+                                <th class="p-3">خلاصه توضیحات</th>
+                                <th class="p-3 text-center">حجم / کاراکتر</th>
+                                <th class="p-3 text-center">وضعیت</th>
+                                <th class="p-3 text-center">عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="skills-table-body" class="divide-y divide-gray-200 dark:divide-gray-800">
+                            <tr>
+                                <td colspan="6" class="p-8 text-center text-gray-400">
+                                    در حال بارگذاری مهارت‌ها...
+                                </td>
+                            </tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -675,7 +836,86 @@
         </div>
     </div>
 
-    
+    </div>
+
+    <!-- SKILL VIEW & EDIT MODAL -->
+    <div id="skill-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-2 md:p-6 hidden">
+        <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#383838] rounded-2xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="p-4 border-b border-gray-200 dark:border-[#2a2a2a] flex items-center justify-between bg-gray-50 dark:bg-[#141414]">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                        <i data-lucide="file-edit" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-gray-900 dark:text-gray-100" id="skill-modal-title">مشاهده و ویرایش مهارت</h3>
+                        <p class="text-xs text-gray-400 font-mono" id="skill-modal-filename">skill.md</p>
+                    </div>
+                </div>
+                <button type="button" id="btn-close-skill-modal" class="p-2 rounded-xl text-gray-400 hover:bg-gray-200 dark:hover:bg-[#2c2c2c] hover:text-white transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar">
+                <input type="hidden" id="skill-edit-id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">عنوان مهارت</label>
+                        <input type="text" id="skill-edit-name" class="w-full px-3.5 py-2 rounded-xl bg-gray-50 dark:bg-[#262626] border border-gray-300 dark:border-gray-700 text-xs text-gray-900 dark:text-gray-100 outline-none focus:ring-1 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">وضعیت فعالیت مهارت</label>
+                        <div class="flex items-center gap-3 pt-1">
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="skill-edit-active" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                                <span class="mr-2 text-xs font-medium text-gray-700 dark:text-gray-300" id="skill-edit-active-label">فعال</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">خلاصه و توضیحات</label>
+                    <input type="text" id="skill-edit-description" class="w-full px-3.5 py-2 rounded-xl bg-gray-50 dark:bg-[#262626] border border-gray-300 dark:border-gray-700 text-xs text-gray-900 dark:text-gray-100 outline-none focus:ring-1 focus:ring-emerald-500">
+                </div>
+
+                <!-- View / Edit Tabs for Markdown Content -->
+                <div class="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden flex flex-col">
+                    <div class="flex border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#222] px-3">
+                        <button type="button" id="btn-skill-tab-edit" class="px-3 py-2 text-xs font-bold text-emerald-500 border-b-2 border-emerald-500 flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="code" class="w-3.5 h-3.5"></i>
+                            <span>ویرایش Markdown</span>
+                        </button>
+                        <button type="button" id="btn-skill-tab-preview" class="px-3 py-2 text-xs font-medium text-gray-400 hover:text-gray-200 border-b-2 border-transparent flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                            <span>پیش‌نمایش سند (Preview)</span>
+                        </button>
+                    </div>
+                    <div id="skill-edit-tab-container" class="p-2">
+                        <textarea id="skill-edit-content" rows="12" class="w-full p-3 rounded-lg bg-gray-50 dark:bg-[#222] border border-gray-300 dark:border-gray-700 text-xs font-mono text-gray-800 dark:text-gray-100 outline-none focus:ring-1 focus:ring-emerald-500 custom-scrollbar leading-relaxed" dir="auto"></textarea>
+                    </div>
+                    <div id="skill-preview-tab-container" class="hidden p-4 min-h-[250px] max-h-96 overflow-y-auto custom-scrollbar text-xs leading-relaxed" dir="auto">
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-gray-200 dark:border-[#2a2a2a] flex items-center justify-between bg-gray-50 dark:bg-[#141414]">
+                <button type="button" id="btn-delete-current-skill" class="px-4 py-2 rounded-xl bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/30 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    <span>حذف این مهارت</span>
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="btn-cancel-skill-edit" class="px-4 py-2 rounded-xl bg-gray-200 dark:bg-[#303030] text-gray-700 dark:text-gray-300 text-xs font-medium hover:bg-gray-300 dark:hover:bg-[#3d3d3d] transition cursor-pointer">
+                        انصراف
+                    </button>
+                    <button type="button" id="btn-save-skill-changes" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow flex items-center gap-1.5 transition cursor-pointer">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        <span>ذخیره تغییرات</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Scripts -->

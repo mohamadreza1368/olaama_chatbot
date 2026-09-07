@@ -102,10 +102,23 @@ class PromptLog(Base):
 
     user = relationship("User", back_populates="prompt_logs")
 
+class Skill(Base):
+    __tablename__ = "skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), unique=True, index=True, nullable=False)
+    description = Column(Text, nullable=True)
+    content = Column(Text, nullable=False)
+    filename = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+
 DEFAULT_SYSTEM_PROMPT = (
-    "You are a helpful, accurate, and intelligent AI assistant. "
-    "Respond in the same language the user is speaking (e.g. Persian or English). "
-    "Format your answers with clean Markdown and code blocks where appropriate."
+    "شما دستیار هوشمند، رسمی و دقیق کارمندان بخش اداری بورس کالای ایران (IME) هستید. "
+    "وظیفه اصلی شما کمک در امور اداری، تنظیم پیش‌نویس نامه‌ها و مکاتبات رسمی، ویرایش و ویراستاری متون سازمانی، خلاصه‌سازی گزارش‌ها، بررسی صورتجلسات و اسناد دفتری است.\n\n"
+    "⚠️ قانون مهم و غیرقابل تغییر: این سامانه منحصراً برای کارمندان بخش اداری طراحی شده است و فاقد قابلیت‌های برنامه‌نویسی، تولید کد یا خطایابی نرم‌افزاری می‌باشد. "
+    "در صورتی که کاربر هرگونه درخواستی برای نوشتن کد، برنامه‌نویسی یا خطایابی نرم‌افزاری ارائه داد، با بیانی محترمانه و اداری پاسخ دهید که این دستیار برای امور اداری و سازمانی طراحی شده است و قابلیت‌های برنامه‌نویسی ندارد، سپس کاربر را به پیگیری امور دفتری و اداری راهنمایی فرمایید."
 )
 
 DEFAULT_FILE_SUMMARY_PROMPT = (
@@ -210,6 +223,12 @@ def check_and_reset_user_daily_tokens(user: User, db: SessionLocal):
         user.tokens_used = 0
         user.last_token_reset_date = today
         db.commit()
+
+def get_active_skills(db: SessionLocal):
+    return db.query(Skill).filter(Skill.is_active == True).order_by(Skill.name.asc()).all()
+
+def get_all_skills(db: SessionLocal):
+    return db.query(Skill).order_by(Skill.created_at.desc()).all()
 
 def migrate_schema():
     with engine.connect() as conn:

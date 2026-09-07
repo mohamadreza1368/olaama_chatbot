@@ -24,11 +24,12 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
 
 ### 3. ⚙️ Admin Control Panel (Admin Hub)
 - **Model Switcher**: Auto-discovers all locally installed Ollama models and switches the system-wide active model in real time.
+- **Skills Management (Single File & Full Folder)**: Upload and manage Markdown (`.md`) skill instructions as single files, complete folder hierarchies (via browser folder picker or drag & drop), zip archives, or local disk directory scan. Active skills are automatically injected into the AI's system prompt to guide specialized domain behavior.
 - **Reference Prompts Customizer**: Configure and update global system prompts, file auto-summary prompts, and file Q&A prompts directly from the UI, with one-click reset to defaults.
 - **User Management**: Create users with custom daily token quotas, built-in secure password generator, and universal one-click credential copy.
 - **Session & History Inspector**: Administrators can inspect any user's past chat sessions, conversation history, and usage details.
 - **Real-Time Request & Latency Logs**: Inspect complete prompt logs including user, model, full prompt, full response, latency (ms), IP address, and status.
-- **Live Stats Dashboard**: Overview of total users, sessions, messages, prompt logs, and active AI processing queue.
+- **Live Stats Dashboard**: Overview of total users, sessions, messages, prompt logs, active skills, and active AI processing queue.
 
 ### 4. 🚦 Fair-Usage Request Queue (FIFO)
 - Single-worker queue processing to prevent local GPU/CPU overload when multiple users query the model concurrently.

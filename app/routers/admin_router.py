@@ -1,14 +1,21 @@
 from app.queue_service import request_queue
 import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.database import get_db, User, ChatSession, ChatMessage, PromptLog, get_system_model, set_system_model, get_system_prompt, set_system_prompt, get_reference_prompts, set_reference_prompts, reset_reference_prompts, check_and_reset_user_daily_tokens
+from app.database import (
+    get_db, User, ChatSession, ChatMessage, PromptLog, Skill,
+    get_system_model, set_system_model, get_system_prompt, set_system_prompt,
+    get_reference_prompts, set_reference_prompts, reset_reference_prompts,
+    check_and_reset_user_daily_tokens, get_active_skills, get_all_skills
+)
 from app.auth import get_current_admin, hash_password
 from app.ollama_service import ollama_service
+from app.skill_service import skill_service
 from app.cleanup_service import cleanup_old_records
+from app.security_service import security_service
 from app.config import settings
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Panel"])
@@ -86,12 +93,16 @@ def get_admin_stats(db: Session = Depends(get_db), admin: User = Depends(get_cur
     total_logs = db.query(PromptLog).count()
     
     avg_latency = db.query(func.avg(PromptLog.latency_ms)).scalar() or 0
+    total_skills = db.query(Skill).count()
+    active_skills = db.query(Skill).filter(Skill.is_active == True).count()
 
     return {
         "total_users": total_users,
         "total_sessions": total_sessions,
         "total_messages": total_messages,
         "total_logs": total_logs,
+        "total_skills": total_skills,
+        "active_skills": active_skills,
         "avg_latency_ms": round(float(avg_latency), 1),
         "retention_days": settings.RETENTION_DAYS
     }
@@ -207,7 +218,7 @@ def get_user_session_messages(
 
 @router.post("/users")
 def create_user_by_admin(req: CreateUserReq, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    clean_username = req.username.strip()
+    clean_username = security_service.validate_username(req.username)
     existing = db.query(User).filter(User.username == clean_username).first()
     if existing:
         raise HTTPException(status_code=400, detail="این نام کاربری قبلاً ثبت شده است.")
@@ -289,8 +300,8 @@ def list_prompt_logs(
     admin: User = Depends(get_current_admin)
 ):
     query = db.query(PromptLog)
-    if search:
-        s = f"%{search.strip()}%"
+    if search and search.strip():
+        s = f"%{security_service.escape_sql_like(search.strip()[:100])}%"
         query = query.filter((PromptLog.prompt.like(s)) | (PromptLog.username_display.like(s)) | (PromptLog.response.like(s)))
     if auth_type:
         query = query.filter(PromptLog.auth_type == auth_type)
@@ -329,3 +340,264 @@ def list_prompt_logs(
 def trigger_cleanup(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     result = cleanup_old_records(db, retention_days=settings.RETENTION_DAYS)
     return {"message": "پاکسازی با موفقیت انجام شد", "details": result}
+
+# --- Skills Management Endpoints ---
+
+class UpdateSkillReq(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    content: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class ScanFolderReq(BaseModel):
+    folder_path: str
+
+class ToggleAllSkillsReq(BaseModel):
+    is_active: bool
+
+@router.get("/skills")
+def list_skills(
+    search: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    query = db.query(Skill)
+    if search and search.strip():
+        s = f"%{security_service.escape_sql_like(search.strip()[:100])}%"
+        query = query.filter((Skill.name.ilike(s)) | (Skill.description.ilike(s)) | (Skill.content.ilike(s)))
+    if status == "active":
+        query = query.filter(Skill.is_active == True)
+    elif status == "inactive":
+        query = query.filter(Skill.is_active == False)
+
+    skills = query.order_by(Skill.created_at.desc()).all()
+    total_count = db.query(Skill).count()
+    active_count = db.query(Skill).filter(Skill.is_active == True).count()
+
+    items = [
+        {
+            "id": sk.id,
+            "name": sk.name,
+            "description": sk.description,
+            "content": sk.content,
+            "filename": sk.filename,
+            "is_active": sk.is_active,
+            "char_count": len(sk.content) if sk.content else 0,
+            "created_at": sk.created_at.isoformat() if sk.created_at else None,
+            "updated_at": sk.updated_at.isoformat() if sk.updated_at else None
+        }
+        for sk in skills
+    ]
+
+    return {
+        "total": total_count,
+        "active_count": active_count,
+        "items": items
+    }
+
+@router.post("/skills/upload")
+async def upload_skills(
+    files: List[UploadFile] = File(...),
+    relative_paths: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Upload one or multiple .md files, or folder structure from browser webkitdirectory.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="هیچ فایلی برای آپلود انتخاب نشده است.")
+
+    rel_paths_list = []
+    if relative_paths:
+        try:
+            import json
+            rel_paths_list = json.loads(relative_paths)
+        except Exception:
+            rel_paths_list = [p.strip() for p in relative_paths.split(",") if p.strip()]
+
+    imported_skills = []
+    errors = []
+
+    for idx, f in enumerate(files):
+        filename = f.filename or "skill.md"
+        # If relative path provided from folder upload, use it
+        if idx < len(rel_paths_list) and rel_paths_list[idx]:
+            filename = rel_paths_list[idx]
+
+        if not filename.lower().endswith((".md", ".markdown", ".txt")):
+            continue
+
+        try:
+            content_bytes = await f.read()
+            content_str = content_bytes.decode("utf-8", errors="replace")
+            if not content_str.strip():
+                continue
+
+            skill = skill_service.import_single_skill(db, content_str, filename, is_active=True)
+            imported_skills.append({
+                "id": skill.id,
+                "name": skill.name,
+                "filename": skill.filename
+            })
+        except Exception as e:
+            errors.append(f"خطا در ذخیره {filename}: {str(e)}")
+
+    if not imported_skills and errors:
+        raise HTTPException(status_code=400, detail="خطا در ذخیره فایل‌ها: " + "; ".join(errors))
+
+    return {
+        "message": f"{len(imported_skills)} مهارت با موفقیت ثبت/به‌روزرسانی شد.",
+        "imported_count": len(imported_skills),
+        "skills": imported_skills,
+        "errors": errors
+    }
+
+@router.post("/skills/upload-zip")
+async def upload_skills_zip(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    if not file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="فایل ارسالی باید با پسوند .zip باشد.")
+
+    zip_bytes = await file.read()
+    try:
+        result = skill_service.import_zip_archive(zip_bytes, db)
+        return {
+            "message": f"{result['imported']} مهارت از فایل فشرده با موفقیت درون‌ریزی شد.",
+            "imported_count": result["imported"],
+            "skills": result["skills"],
+            "errors": result["errors"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"خطا در پردازش فایل زیپ: {str(e)}")
+
+@router.post("/skills/scan-folder")
+def scan_local_skills_folder(
+    req: ScanFolderReq,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    folder_path = req.folder_path.strip()
+    if not folder_path:
+        raise HTTPException(status_code=400, detail="مسیر پوشه نمی‌تواند خالی باشد.")
+
+    try:
+        result = skill_service.scan_directory(folder_path, db)
+        return {
+            "message": f"اسکن پایان یافت. {result['imported']} مهارت با موفقیت شناسایی و درون‌ریزی شد.",
+            "total_found": result["total_found"],
+            "imported_count": result["imported"],
+            "skills": result["skills"],
+            "errors": result["errors"]
+        }
+    except FileNotFoundError as fnf:
+        raise HTTPException(status_code=404, detail=str(fnf))
+    except NotADirectoryError as nde:
+        raise HTTPException(status_code=400, detail=str(nde))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطا در اسکن مسیر: {str(e)}")
+
+@router.get("/skills/{skill_id}")
+def get_skill_detail(
+    skill_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    sk = db.query(Skill).filter(Skill.id == skill_id).first()
+    if not sk:
+        raise HTTPException(status_code=404, detail="مهارت مورد نظر یافت نشد.")
+    return {
+        "id": sk.id,
+        "name": sk.name,
+        "description": sk.description,
+        "content": sk.content,
+        "filename": sk.filename,
+        "is_active": sk.is_active,
+        "created_at": sk.created_at.isoformat() if sk.created_at else None,
+        "updated_at": sk.updated_at.isoformat() if sk.updated_at else None
+    }
+
+@router.put("/skills/{skill_id}")
+def update_skill(
+    skill_id: int,
+    req: UpdateSkillReq,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    sk = db.query(Skill).filter(Skill.id == skill_id).first()
+    if not sk:
+        raise HTTPException(status_code=404, detail="مهارت مورد نظر یافت نشد.")
+
+    if req.name is not None and req.name.strip():
+        # Check duplicate name
+        other = db.query(Skill).filter(Skill.name == req.name.strip(), Skill.id != skill_id).first()
+        if other:
+            raise HTTPException(status_code=400, detail="مهارت دیگری با این عنوان قبلاً ثبت شده است.")
+        sk.name = req.name.strip()
+
+    if req.description is not None:
+        sk.description = req.description.strip()
+    if req.content is not None and req.content.strip():
+        sk.content = req.content
+        if sk.filename:
+            try:
+                skill_service.save_file_to_disk(sk.filename, req.content)
+            except Exception:
+                pass
+    if req.is_active is not None:
+        sk.is_active = req.is_active
+
+    sk.updated_at = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(sk)
+
+    return {"message": "مهارت با موفقیت به‌روزرسانی شد.", "skill": {
+        "id": sk.id, "name": sk.name, "description": sk.description, "is_active": sk.is_active
+    }}
+
+@router.patch("/skills/{skill_id}/toggle")
+def toggle_skill_active(
+    skill_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    sk = db.query(Skill).filter(Skill.id == skill_id).first()
+    if not sk:
+        raise HTTPException(status_code=404, detail="مهارت مورد نظر یافت نشد.")
+
+    sk.is_active = not sk.is_active
+    sk.updated_at = datetime.datetime.utcnow()
+    db.commit()
+
+    status_str = "فعال" if sk.is_active else "غیرفعال"
+    return {"message": f"مهارت «{sk.name}» {status_str} شد.", "id": sk.id, "is_active": sk.is_active}
+
+@router.delete("/skills/{skill_id}")
+def delete_skill(
+    skill_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    sk = db.query(Skill).filter(Skill.id == skill_id).first()
+    if not sk:
+        raise HTTPException(status_code=404, detail="مهارت مورد نظر یافت نشد.")
+
+    skill_name = sk.name
+    db.delete(sk)
+    db.commit()
+    return {"message": f"مهارت «{skill_name}» با موفقیت حذف گردید."}
+
+@router.post("/skills/toggle-all")
+def toggle_all_skills(
+    req: ToggleAllSkillsReq,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    db.query(Skill).update({Skill.is_active: req.is_active, Skill.updated_at: datetime.datetime.utcnow()})
+    db.commit()
+    status_str = "فعال" if req.is_active else "غیرفعال"
+    return {"message": f"تمامی مهارت‌ها به حالت {status_str} درآمدند.", "is_active": req.is_active}

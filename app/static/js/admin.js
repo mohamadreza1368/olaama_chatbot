@@ -2,6 +2,8 @@
 const Admin = {
     logs: [],
     users: [],
+    skills: [],
+    currentEditingSkillId: null,
     systemSettings: {},
     currentInspectedUserId: null,
     currentInspectedSessions: [],
@@ -29,13 +31,16 @@ const Admin = {
         }
 
         // Tabs
-        const tabs = ['users', 'model', 'logs', 'maintenance'];
+        const tabs = ['users', 'skills', 'model', 'logs', 'maintenance'];
         tabs.forEach(tab => {
             const btn = document.getElementById(`admin-tab-${tab}`);
             if (btn) {
                 btn.addEventListener('click', () => this.switchTab(tab));
             }
         });
+
+        // Skills Setup
+        this.setupSkills();
 
         // Model Settings Save
         const btnSaveModel = document.getElementById('btn-save-system-model');
@@ -85,18 +90,18 @@ const Admin = {
     },
 
     switchTab(activeTab) {
-        const tabs = ['users', 'model', 'logs', 'maintenance'];
+        const tabs = ['users', 'skills', 'model', 'logs', 'maintenance'];
         tabs.forEach(tab => {
             const btn = document.getElementById(`admin-tab-${tab}`);
             const panel = document.getElementById(`admin-panel-${tab}`);
             if (tab === activeTab) {
                 if (btn) {
-                    btn.className = 'admin-tab-btn px-4 py-3 border-b-2 border-emerald-500 text-emerald-500 font-semibold flex items-center gap-2';
+                    btn.className = 'admin-tab-btn px-4 py-3 border-b-2 border-emerald-500 text-emerald-500 font-semibold flex items-center gap-2 flex-shrink-0';
                 }
                 if (panel) panel.classList.remove('hidden');
             } else {
                 if (btn) {
-                    btn.className = 'admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2';
+                    btn.className = 'admin-tab-btn px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center gap-2 flex-shrink-0';
                 }
                 if (panel) panel.classList.add('hidden');
             }
@@ -108,6 +113,7 @@ const Admin = {
         await Promise.all([
             this.loadStats(),
             this.loadUsers(),
+            this.loadSkills(),
             this.loadSystemSettings(),
             this.loadLogs()
         ]);
@@ -248,11 +254,26 @@ const Admin = {
             });
             if (res.ok) {
                 const s = await res.json();
-                document.getElementById('stat-total-users').textContent = s.total_users;
-                document.getElementById('stat-total-sessions').textContent = s.total_sessions;
-                document.getElementById('stat-total-messages').textContent = s.total_messages;
-                document.getElementById('stat-total-logs').textContent = s.total_logs;
-                document.getElementById('stat-avg-latency').textContent = `${s.avg_latency_ms} ms`;
+                const totalUsersEl = document.getElementById('stat-total-users');
+                if (totalUsersEl) totalUsersEl.textContent = s.total_users;
+                const totalSessEl = document.getElementById('stat-total-sessions');
+                if (totalSessEl) totalSessEl.textContent = s.total_sessions;
+                const totalMsgEl = document.getElementById('stat-total-messages');
+                if (totalMsgEl) totalMsgEl.textContent = s.total_messages;
+                const totalLogsEl = document.getElementById('stat-total-logs');
+                if (totalLogsEl) totalLogsEl.textContent = s.total_logs;
+
+                const skillsEl = document.getElementById('stat-total-skills');
+                if (skillsEl && s.total_skills !== undefined) {
+                    skillsEl.textContent = `${s.active_skills || 0} / ${s.total_skills || 0}`;
+                }
+                const badgeSkills = document.getElementById('badge-skills-count');
+                if (badgeSkills) badgeSkills.textContent = s.active_skills || 0;
+                const headerSkills = document.getElementById('active-skills-count-display');
+                if (headerSkills) headerSkills.textContent = `${s.active_skills || 0} مهارت فعال`;
+
+                const latencyEl = document.getElementById('stat-avg-latency');
+                if (latencyEl) latencyEl.textContent = `${s.avg_latency_ms} ms`;
             }
         } catch (e) {
             console.error('Error loading stats:', e);
@@ -846,6 +867,581 @@ const Admin = {
                     if (window.lucide) lucide.createIcons();
                 }
             });
+        }
+    },
+
+    // --- Skills Management Controller ---
+
+    setupSkills() {
+        // Single File Input
+        const btnSingle = document.getElementById('btn-skills-upload-single');
+        const inputSingle = document.getElementById('skills-single-file-input');
+        if (btnSingle && inputSingle) {
+            btnSingle.addEventListener('click', () => inputSingle.click());
+            inputSingle.addEventListener('change', () => {
+                if (inputSingle.files && inputSingle.files.length > 0) {
+                    this.uploadSkillFiles(inputSingle.files);
+                    inputSingle.value = '';
+                }
+            });
+        }
+
+        // Folder Input (webkitdirectory)
+        const btnFolder = document.getElementById('btn-skills-upload-folder');
+        const inputFolder = document.getElementById('skills-folder-input');
+        if (btnFolder && inputFolder) {
+            btnFolder.addEventListener('click', () => inputFolder.click());
+            inputFolder.addEventListener('change', () => {
+                if (inputFolder.files && inputFolder.files.length > 0) {
+                    this.uploadSkillFiles(inputFolder.files, true);
+                    inputFolder.value = '';
+                }
+            });
+        }
+
+        // Zip Input
+        const btnZip = document.getElementById('btn-skills-upload-zip');
+        const inputZip = document.getElementById('skills-zip-input');
+        if (btnZip && inputZip) {
+            btnZip.addEventListener('click', () => inputZip.click());
+            inputZip.addEventListener('change', () => {
+                if (inputZip.files && inputZip.files.length > 0) {
+                    this.uploadSkillZip(inputZip.files[0]);
+                    inputZip.value = '';
+                }
+            });
+        }
+
+        // Toggle Scan Path Box
+        const btnToggleScan = document.getElementById('btn-skills-toggle-scan-box');
+        const scanContainer = document.getElementById('skills-scan-path-container');
+        if (btnToggleScan && scanContainer) {
+            btnToggleScan.addEventListener('click', () => {
+                scanContainer.classList.toggle('hidden');
+                if (!scanContainer.classList.contains('hidden')) {
+                    const input = document.getElementById('skills-scan-path-input');
+                    if (input) input.focus();
+                }
+            });
+        }
+
+        // Submit Scan Path
+        const btnSubmitScan = document.getElementById('btn-submit-scan-path');
+        const inputScanPath = document.getElementById('skills-scan-path-input');
+        if (btnSubmitScan && inputScanPath) {
+            btnSubmitScan.addEventListener('click', () => this.scanServerPath());
+            inputScanPath.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.scanServerPath();
+                }
+            });
+        }
+
+        // Drag & Drop Zone
+        const dropZone = document.getElementById('skills-drop-zone');
+        if (dropZone) {
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.add('border-emerald-500', 'bg-emerald-500/10');
+                });
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.remove('border-emerald-500', 'bg-emerald-500/10');
+                });
+            });
+            dropZone.addEventListener('drop', async (e) => {
+                const dt = e.dataTransfer;
+                if (!dt) return;
+
+                // Handle folder scanning via DataTransferItems if available
+                if (dt.items && dt.items.length > 0 && dt.items[0].webkitGetAsEntry) {
+                    const filesWithPaths = [];
+                    const readEntry = async (entry, currentPath = "") => {
+                        if (entry.isFile) {
+                            await new Promise(resolve => {
+                                entry.file(file => {
+                                    file.customRelativePath = currentPath + file.name;
+                                    filesWithPaths.push(file);
+                                    resolve();
+                                });
+                            });
+                        } else if (entry.isDirectory) {
+                            const dirReader = entry.createReader();
+                            const entries = await new Promise(resolve => {
+                                dirReader.readEntries(entries => resolve(entries));
+                            });
+                            for (const child of entries) {
+                                await readEntry(child, currentPath + entry.name + "/");
+                            }
+                        }
+                    };
+
+                    for (let i = 0; i < dt.items.length; i++) {
+                        const entry = dt.items[i].webkitGetAsEntry();
+                        if (entry) await readEntry(entry);
+                    }
+
+                    if (filesWithPaths.length > 0) {
+                        this.uploadSkillFiles(filesWithPaths, true);
+                        return;
+                    }
+                }
+
+                if (dt.files && dt.files.length > 0) {
+                    this.uploadSkillFiles(dt.files);
+                }
+            });
+        }
+
+        // Search & Filter
+        const searchInput = document.getElementById('skills-search-input');
+        const filterStatus = document.getElementById('skills-filter-status');
+        const btnRefresh = document.getElementById('btn-refresh-skills');
+
+        if (searchInput) {
+            let timeout = null;
+            searchInput.addEventListener('input', () => {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => this.loadSkills(), 400);
+            });
+        }
+        if (filterStatus) filterStatus.addEventListener('change', () => this.loadSkills());
+        if (btnRefresh) btnRefresh.addEventListener('click', () => this.loadSkills());
+
+        // Bulk Actions
+        const btnActivateAll = document.getElementById('btn-skills-activate-all');
+        const btnDeactivateAll = document.getElementById('btn-skills-deactivate-all');
+        if (btnActivateAll) btnActivateAll.addEventListener('click', () => this.toggleAllSkills(true));
+        if (btnDeactivateAll) btnDeactivateAll.addEventListener('click', () => this.toggleAllSkills(false));
+
+        // Skill Modal Actions
+        const modal = document.getElementById('skill-modal');
+        const btnClose = document.getElementById('btn-close-skill-modal');
+        const btnCancel = document.getElementById('btn-cancel-skill-edit');
+        const btnSave = document.getElementById('btn-save-skill-changes');
+        const btnDelete = document.getElementById('btn-delete-current-skill');
+
+        if (btnClose && modal) btnClose.addEventListener('click', () => modal.classList.add('hidden'));
+        if (btnCancel && modal) btnCancel.addEventListener('click', () => modal.classList.add('hidden'));
+        if (btnSave) btnSave.addEventListener('click', () => this.saveSkillChanges());
+        if (btnDelete) btnDelete.addEventListener('click', () => this.deleteSkill(this.currentEditingSkillId));
+
+        // Skill Modal Edit / Preview Tabs
+        const btnTabEdit = document.getElementById('btn-skill-tab-edit');
+        const btnTabPreview = document.getElementById('btn-skill-tab-preview');
+        const editContainer = document.getElementById('skill-edit-tab-container');
+        const previewContainer = document.getElementById('skill-preview-tab-container');
+        const contentTextarea = document.getElementById('skill-edit-content');
+
+        if (btnTabEdit && btnTabPreview && editContainer && previewContainer) {
+            btnTabEdit.addEventListener('click', () => {
+                btnTabEdit.className = 'px-3 py-2 text-xs font-bold text-emerald-500 border-b-2 border-emerald-500 flex items-center gap-1.5 cursor-pointer';
+                btnTabPreview.className = 'px-3 py-2 text-xs font-medium text-gray-400 hover:text-gray-200 border-b-2 border-transparent flex items-center gap-1.5 cursor-pointer';
+                editContainer.classList.remove('hidden');
+                previewContainer.classList.add('hidden');
+            });
+            btnTabPreview.addEventListener('click', () => {
+                btnTabPreview.className = 'px-3 py-2 text-xs font-bold text-emerald-500 border-b-2 border-emerald-500 flex items-center gap-1.5 cursor-pointer';
+                btnTabEdit.className = 'px-3 py-2 text-xs font-medium text-gray-400 hover:text-gray-200 border-b-2 border-transparent flex items-center gap-1.5 cursor-pointer';
+                const mdContent = contentTextarea ? contentTextarea.value : '';
+                previewContainer.innerHTML = window.marked ? marked.parse(mdContent) : `<pre>${mdContent}</pre>`;
+                editContainer.classList.add('hidden');
+                previewContainer.classList.remove('hidden');
+            });
+        }
+
+        // Active Checkbox Label Update
+        const activeCheck = document.getElementById('skill-edit-active');
+        const activeLabel = document.getElementById('skill-edit-active-label');
+        if (activeCheck && activeLabel) {
+            activeCheck.addEventListener('change', () => {
+                activeLabel.textContent = activeCheck.checked ? 'فعال' : 'غیرفعال';
+                activeLabel.className = activeCheck.checked 
+                    ? 'mr-2 text-xs font-semibold text-emerald-500' 
+                    : 'mr-2 text-xs font-medium text-gray-400';
+            });
+        }
+    },
+
+    async loadSkills() {
+        const searchInput = document.getElementById('skills-search-input');
+        const filterStatus = document.getElementById('skills-filter-status');
+        const queryParams = new URLSearchParams();
+
+        if (searchInput && searchInput.value.trim()) queryParams.append('search', searchInput.value.trim());
+        if (filterStatus && filterStatus.value) queryParams.append('status', filterStatus.value);
+
+        try {
+            const res = await fetch(`/api/admin/skills?${queryParams.toString()}`, {
+                headers: { 'Authorization': `Bearer ${App.token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                this.skills = data.items || [];
+                
+                // Update badge and stats
+                const badge = document.getElementById('badge-skills-count');
+                if (badge) badge.textContent = data.active_count || 0;
+
+                const skillsStat = document.getElementById('stat-total-skills');
+                if (skillsStat) skillsStat.textContent = `${data.active_count || 0} / ${data.total || 0}`;
+
+                const headerSkills = document.getElementById('active-skills-count-display');
+                if (headerSkills) headerSkills.textContent = `${data.active_count || 0} مهارت فعال`;
+
+                this.renderSkillsTable();
+            }
+        } catch (e) {
+            console.error('Error loading skills:', e);
+        }
+    },
+
+    renderSkillsTable() {
+        const tbody = document.getElementById('skills-table-body');
+        if (!tbody) return;
+
+        if (this.skills.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="p-8 text-center text-gray-400">
+                        <i data-lucide="folder-code" class="w-8 h-8 text-gray-500 mx-auto mb-2 opacity-60"></i>
+                        <p class="font-medium text-xs">هیچ مهارتی یافت نشد.</p>
+                        <p class="text-[11px] text-gray-500 mt-1">با استفاده از دکمه‌های بالا، فایل .md تکی یا پوشه مهارت‌ها را بارگذاری نمایید.</p>
+                    </td>
+                </tr>
+            `;
+            if (window.lucide) lucide.createIcons();
+            return;
+        }
+
+        tbody.innerHTML = this.skills.map(sk => `
+            <tr class="hover:bg-gray-50/60 dark:hover:bg-[#262626]/60 transition-colors">
+                <td class="p-3 font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <i data-lucide="file-text" class="w-4 h-4 text-amber-500 flex-shrink-0"></i>
+                    <span>${sk.name}</span>
+                </td>
+                <td class="p-3 font-mono text-[11px] text-gray-500 dark:text-gray-400 max-w-[180px] truncate" dir="ltr" title="${sk.filename || '-'}">
+                    ${sk.filename || '-'}
+                </td>
+                <td class="p-3 text-gray-600 dark:text-gray-300 max-w-[280px] truncate" title="${sk.description || ''}">
+                    ${sk.description || '-'}
+                </td>
+                <td class="p-3 text-center font-mono text-gray-500 text-[11px]">
+                    ${(sk.char_count || 0).toLocaleString()} کاراکتر
+                </td>
+                <td class="p-3 text-center">
+                    <button type="button" onclick="Admin.toggleSkill(${sk.id})" class="px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer ${sk.is_active ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30' : 'bg-gray-200 dark:bg-[#333] text-gray-500 hover:bg-gray-300 dark:hover:bg-[#444]'}">
+                        ${sk.is_active ? '● فعال' : '○ غیرفعال'}
+                    </button>
+                </td>
+                <td class="p-3 text-center">
+                    <div class="flex items-center justify-center gap-1.5">
+                        <button type="button" onclick="Admin.openSkillModal(${sk.id})" class="p-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition cursor-pointer" title="مشاهده و ویرایش">
+                            <i data-lucide="edit-3" class="w-4 h-4"></i>
+                        </button>
+                        <button type="button" onclick="Admin.deleteSkill(${sk.id})" class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition cursor-pointer" title="حذف مهارت">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+
+        if (window.lucide) lucide.createIcons();
+    },
+
+    async uploadSkillFiles(files, isFolder = false) {
+        if (!files || files.length === 0) return;
+
+        const spinner = document.getElementById('skills-upload-spinner');
+        const spinnerText = document.getElementById('skills-upload-status-text');
+        if (spinner) {
+            spinner.classList.remove('hidden');
+            if (spinnerText) spinnerText.textContent = `در حال بارگذاری ${files.length} فایل...`;
+        }
+
+        const formData = new FormData();
+        const relPaths = [];
+
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i];
+            formData.append('files', f);
+            const path = f.customRelativePath || f.webkitRelativePath || f.name;
+            relPaths.push(path);
+        }
+        formData.append('relative_paths', JSON.stringify(relPaths));
+
+        try {
+            const res = await fetch('/api/admin/skills/upload', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${App.token}` },
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok) {
+                App.toast(data.message || 'فایل‌های مهارت با موفقیت بارگذاری شدند.', 'success');
+                await this.loadSkills();
+                await this.loadStats();
+            } else {
+                App.toast(data.detail || 'خطا در بارگذاری فایل‌ها', 'error');
+            }
+        } catch (e) {
+            App.toast('خطای شبکه در بارگذاری مهارت‌ها', 'error');
+        } finally {
+            if (spinner) spinner.classList.add('hidden');
+        }
+    },
+
+    async uploadSkillZip(file) {
+        if (!file) return;
+
+        const spinner = document.getElementById('skills-upload-spinner');
+        const spinnerText = document.getElementById('skills-upload-status-text');
+        if (spinner) {
+            spinner.classList.remove('hidden');
+            if (spinnerText) spinnerText.textContent = 'در حال استخراج و بارگذاری فایل فشرده zip...';
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('/api/admin/skills/upload-zip', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${App.token}` },
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok) {
+                App.toast(data.message || 'فایل زیپ مهارت‌ها با موفقیت درون‌ریزی شد.', 'success');
+                await this.loadSkills();
+                await this.loadStats();
+            } else {
+                App.toast(data.detail || 'خطا در استخراج فایل زیپ', 'error');
+            }
+        } catch (e) {
+            App.toast('خطای سرور در استخراج فایل زیپ', 'error');
+        } finally {
+            if (spinner) spinner.classList.add('hidden');
+        }
+    },
+
+    async scanServerPath() {
+        const input = document.getElementById('skills-scan-path-input');
+        const pathVal = input ? input.value.trim() : '';
+        if (!pathVal) {
+            App.toast('لطفاً مسیر پوشه روی سرور/سیستم را وارد کنید.', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('btn-submit-scan-path');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>در حال اسکن...</span>';
+        }
+
+        try {
+            const res = await fetch('/api/admin/skills/scan-folder', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${App.token}`
+                },
+                body: JSON.stringify({ folder_path: pathVal })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                App.toast(data.message || 'اسکن پوشه پایان یافت.', 'success');
+                await this.loadSkills();
+                await this.loadStats();
+            } else {
+                App.toast(data.detail || 'خطا در اسکن پوشه', 'error');
+            }
+        } catch (e) {
+            App.toast('خطا در ارتباط با سرور جهت اسکن پوشه', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="search" class="w-3.5 h-3.5"></i><span>اسکن و درون‌ریزی</span>';
+                if (window.lucide) lucide.createIcons();
+            }
+        }
+    },
+
+    async toggleSkill(skillId) {
+        try {
+            const res = await fetch(`/api/admin/skills/${skillId}/toggle`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${App.token}` }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                App.toast(data.message, 'info');
+                await this.loadSkills();
+                await this.loadStats();
+            } else {
+                App.toast(data.detail || 'خطا در تغییر وضعیت مهارت', 'error');
+            }
+        } catch (e) {
+            App.toast('خطا در برقراری ارتباط با سرور', 'error');
+        }
+    },
+
+    async toggleAllSkills(active) {
+        try {
+            const res = await fetch('/api/admin/skills/toggle-all', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${App.token}`
+                },
+                body: JSON.stringify({ is_active: active })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                App.toast(data.message, 'success');
+                await this.loadSkills();
+                await this.loadStats();
+            } else {
+                App.toast(data.detail || 'خطا در اعمال تغییرات دسته‌جمعی', 'error');
+            }
+        } catch (e) {
+            App.toast('خطای ارتباط با سرور', 'error');
+        }
+    },
+
+    async openSkillModal(skillId) {
+        try {
+            const res = await fetch(`/api/admin/skills/${skillId}`, {
+                headers: { 'Authorization': `Bearer ${App.token}` }
+            });
+            if (!res.ok) {
+                App.toast('خطا در دریافت اطلاعات مهارت', 'error');
+                return;
+            }
+            const sk = await res.json();
+            this.currentEditingSkillId = sk.id;
+
+            const modal = document.getElementById('skill-modal');
+            const titleEl = document.getElementById('skill-modal-title');
+            const fileEl = document.getElementById('skill-modal-filename');
+            const idInput = document.getElementById('skill-edit-id');
+            const nameInput = document.getElementById('skill-edit-name');
+            const activeCheck = document.getElementById('skill-edit-active');
+            const activeLabel = document.getElementById('skill-edit-active-label');
+            const descInput = document.getElementById('skill-edit-description');
+            const contentInput = document.getElementById('skill-edit-content');
+
+            if (titleEl) titleEl.textContent = sk.name;
+            if (fileEl) fileEl.textContent = sk.filename || 'skill.md';
+            if (idInput) idInput.value = sk.id;
+            if (nameInput) nameInput.value = sk.name;
+            if (activeCheck) {
+                activeCheck.checked = sk.is_active;
+                if (activeLabel) {
+                    activeLabel.textContent = sk.is_active ? 'فعال' : 'غیرفعال';
+                    activeLabel.className = sk.is_active ? 'mr-2 text-xs font-semibold text-emerald-500' : 'mr-2 text-xs font-medium text-gray-400';
+                }
+            }
+            if (descInput) descInput.value = sk.description || '';
+            if (contentInput) contentInput.value = sk.content || '';
+
+            // Reset to Edit tab
+            const btnTabEdit = document.getElementById('btn-skill-tab-edit');
+            const btnTabPreview = document.getElementById('btn-skill-tab-preview');
+            const editContainer = document.getElementById('skill-edit-tab-container');
+            const previewContainer = document.getElementById('skill-preview-tab-container');
+
+            if (btnTabEdit) btnTabEdit.className = 'px-3 py-2 text-xs font-bold text-emerald-500 border-b-2 border-emerald-500 flex items-center gap-1.5 cursor-pointer';
+            if (btnTabPreview) btnTabPreview.className = 'px-3 py-2 text-xs font-medium text-gray-400 hover:text-gray-200 border-b-2 border-transparent flex items-center gap-1.5 cursor-pointer';
+            if (editContainer) editContainer.classList.remove('hidden');
+            if (previewContainer) previewContainer.classList.add('hidden');
+
+            if (modal) modal.classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+        } catch (e) {
+            App.toast('خطا در باز کردن مهارت', 'error');
+        }
+    },
+
+    async saveSkillChanges() {
+        if (!this.currentEditingSkillId) return;
+
+        const nameInput = document.getElementById('skill-edit-name');
+        const descInput = document.getElementById('skill-edit-description');
+        const activeCheck = document.getElementById('skill-edit-active');
+        const contentInput = document.getElementById('skill-edit-content');
+
+        const payload = {
+            name: nameInput ? nameInput.value.trim() : undefined,
+            description: descInput ? descInput.value.trim() : undefined,
+            is_active: activeCheck ? activeCheck.checked : undefined,
+            content: contentInput ? contentInput.value : undefined
+        };
+
+        const btnSave = document.getElementById('btn-save-skill-changes');
+        if (btnSave) {
+            btnSave.disabled = true;
+            btnSave.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>در حال ذخیره...</span>';
+        }
+
+        try {
+            const res = await fetch(`/api/admin/skills/${this.currentEditingSkillId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${App.token}`
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok) {
+                App.toast('تغییرات مهارت با موفقیت ذخیره شد.', 'success');
+                const modal = document.getElementById('skill-modal');
+                if (modal) modal.classList.add('hidden');
+                await this.loadSkills();
+                await this.loadStats();
+            } else {
+                App.toast(data.detail || 'خطا در ذخیره تغییرات مهارت', 'error');
+            }
+        } catch (e) {
+            App.toast('خطای شبکه در ذخیره مهارت', 'error');
+        } finally {
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span>ذخیره تغییرات</span>';
+                if (window.lucide) lucide.createIcons();
+            }
+        }
+    },
+
+    async deleteSkill(skillId) {
+        if (!skillId) return;
+        if (!confirm('آیا از حذف این مهارت اطمینان دارید؟ این عمل قابل بازگشت نیست.')) return;
+
+        try {
+            const res = await fetch(`/api/admin/skills/${skillId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${App.token}` }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                App.toast(data.message || 'مهارت با موفقیت حذف شد.', 'success');
+                const modal = document.getElementById('skill-modal');
+                if (modal) modal.classList.add('hidden');
+                await this.loadSkills();
+                await this.loadStats();
+            } else {
+                App.toast(data.detail || 'خطا در حذف مهارت', 'error');
+            }
+        } catch (e) {
+            App.toast('خطا در ارتباط با سرور هنگام حذف', 'error');
         }
     }
 };

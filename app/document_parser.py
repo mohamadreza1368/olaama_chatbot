@@ -149,6 +149,10 @@ def extract_text_from_file(filename: str, content: bytes) -> str:
     """
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
 
+    CODE_EXTENSIONS = {"py", "js", "ts", "jsx", "tsx", "html", "css", "sh", "bat", "sql", "cpp", "c", "h", "java", "go", "rs", "php", "rb"}
+    if ext in CODE_EXTENSIONS:
+        return "[توجه: این سامانه منحصراً برای امور اداری طراحی شده و فایل‌های کدهای برنامه‌نویسی یا اسکریپت پشتیبانی نمی‌شوند. لطفاً اسناد اداری نظیر PDF، Word، Excel یا متنی ارسال فرمایید.]"
+
     if ext == "pdf":
         return extract_text_from_pdf(content)
     elif ext in ["docx", "doc"]:
@@ -157,7 +161,7 @@ def extract_text_from_file(filename: str, content: bytes) -> str:
         return extract_text_from_xlsx(content)
     elif ext in ["csv", "tsv"]:
         return extract_text_from_csv(content)
-    elif ext in ["txt", "md", "json", "py", "js", "ts", "html", "css", "log", "yaml", "yml", "sql", "sh", "bat", "xml"]:
+    elif ext in ["txt", "md", "json", "log", "yaml", "yml", "xml"]:
         return decode_raw_text(content)
     else:
         # Fallback raw decode

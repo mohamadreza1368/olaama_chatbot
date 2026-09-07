@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.database import get_db, User, ApiKey, get_system_model, check_and_reset_user_daily_tokens
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.security_service import security_service
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -12,7 +13,11 @@ class LoginRequest(BaseModel):
 
 @router.post("/login")
 def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    clean_username = req.username.strip()
+    try:
+        clean_username = security_service.validate_username(req.username)
+    except HTTPException:
+        raise HTTPException(status_code=401, detail="نام کاربری یا کلمه عبور وارد شده نادرست است.")
+
     user = db.query(User).filter(User.username == clean_username).first()
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="نام کاربری یا کلمه عبور وارد شده نادرست است.")
