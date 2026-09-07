@@ -3,7 +3,8 @@
 # Optimized for lightweight deployment, high security, and offline usage
 # ==============================================================================
 
-FROM python:3.10-slim
+ARG DOCKER_MIRROR=dockehub.ime.co.ir/
+FROM ${DOCKER_MIRROR}python:3.10-slim
 
 # Python & Environment Configuration
 ENV PYTHONUNBUFFERED=1 \

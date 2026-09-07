@@ -143,6 +143,19 @@ Deploy the application effortlessly in an isolated, production-ready container.
    docker compose down
    ```
 
+### 🪞 Docker Registry Mirror (مخزن میرور داکر)
+
+پروژه به صورت پیش‌فرض با مخزن میرور داخلی `dockehub.ime.co.ir` پیکربندی شده است:
+- در فایل `.env`: متغیر `DOCKER_MIRROR=dockehub.ime.co.ir/` قرار دارد.
+- در `Dockerfile` و `docker-compose.yml`: ایمیج پایه `python:3.10-slim` به صورت خودکار از `dockehub.ime.co.ir/python:3.10-slim` دریافت می‌شود.
+
+همچنین می‌توانید این میرور را به صورت سراسری در تنظیمات داکر (`daemon.json` یا Docker Desktop -> Settings -> Docker Engine) اعمال کنید:
+```json
+{
+  "registry-mirrors": ["https://dockehub.ime.co.ir/"]
+}
+```
+
 ### Option B: Docker CLI
 
 ```bash
