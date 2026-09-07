@@ -13,8 +13,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    ports:
-      - "${PORT:-8000}:8000"
+    # در سرورهای لینوکس: اتصال مستقیم به شبکه هاست جهت دسترسی بدون واسطه به 127.0.0.1:11434
+    network_mode: host
     volumes:
       # Persist SQLite database across container recreations
       - ./chatbot.db:/app/chatbot.db
@@ -25,9 +25,8 @@ services:
       - PORT=8000
       - ENVIRONMENT=production
       - DEBUG=False
-      - IS_DOCKER=true
-      # Connect to host Ollama service via host.docker.internal
-      - OLLAMA_BASE_URL=${DOCKER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # در حالت network_mode: host آدرس اولاما مستقیماً همان 127.0.0.1 سرور است
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://127.0.0.1:11434}
       - DEFAULT_MODEL=${DEFAULT_MODEL:-qwen:0.5b}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-super-secret-jwt-key-change-in-production-2026}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
