@@ -358,6 +358,8 @@ async def send_message(
         try:
             # 5. Handle Queue Waiting & Acquire Slot
             async for queue_status in request_queue.acquire_slot(ticket_id):
+                if await request.is_disconnected():
+                    return
                 if queue_status["status"] == "waiting":
                     yield f"data: {json.dumps({'queue_status': 'waiting', 'position': queue_status['position'], 'total_queued': queue_status.get('total_queued', 1), 'message': queue_status['message']})}\n\n"
                 elif queue_status["status"] == "active":
@@ -366,6 +368,9 @@ async def send_message(
 
             # 6. Stream Chat with Ollama
             async for chunk_str in ollama_service.stream_chat(context_messages, model=active_model):
+                if await request.is_disconnected():
+                    break
+
                 chunk_data = json.loads(chunk_str)
                 if "error" in chunk_data:
                     yield f"data: {json.dumps({'error': chunk_data['error']})}\n\n"

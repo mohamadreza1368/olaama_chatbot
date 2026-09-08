@@ -70,6 +70,10 @@ const Chat = {
     isSlashOpen: false,
     isStreaming: false,
     abortController: null,
+    activeReader: null,
+    activeContentEl: null,
+    activeBubbleWrapper: null,
+    currentAccumulatedResponse: '',
 
     toPersianDigits(str) {
         if (str === null || str === undefined) return '';
@@ -554,7 +558,13 @@ const Chat = {
         if (sendBtn) sendBtn.addEventListener('click', () => this.sendMessage());
 
         const stopBtn = document.getElementById('btn-stop-message');
-        if (stopBtn) stopBtn.addEventListener('click', () => this.stopStreaming());
+        if (stopBtn) {
+            stopBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.stopStreaming();
+            });
+        }
 
         const attachBtn = document.getElementById('btn-attach-file');
         const fileInput = document.getElementById('file-upload-input');
@@ -653,8 +663,16 @@ const Chat = {
             });
         }
 
-        // Global Delegation for Code Block Copy Button
+        // Global Delegation for Code Block Copy Button & Interactive Controls
         document.addEventListener('click', (e) => {
+            const stopMsgBtn = e.target.closest('#btn-stop-message');
+            if (stopMsgBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.stopStreaming();
+                return;
+            }
+
             const btn = e.target.closest('.copy-code-btn');
             if (btn) {
                 e.preventDefault();
@@ -1093,13 +1111,66 @@ const Chat = {
         }
     },
 
-    stopStreaming() {
+    async stopStreaming() {
+        if (!this.isStreaming && !this.abortController && !this.activeReader) return;
+        this.isStreaming = false;
+
+        // 1. Cancel fetch stream reader immediately
+        if (this.activeReader) {
+            try {
+                await this.activeReader.cancel();
+            } catch (e) {
+                console.warn('Reader cancel error:', e);
+            }
+            this.activeReader = null;
+        }
+
+        // 2. Abort fetch controller
         if (this.abortController) {
-            this.abortController.abort();
+            try {
+                this.abortController.abort();
+            } catch (e) {}
             this.abortController = null;
         }
-        this.isStreaming = false;
+
+        // 3. Finalize UI immediately with whatever text was accumulated
+        const contentEl = this.activeContentEl;
+        const asstBubbleWrapper = this.activeBubbleWrapper;
+        const accumulatedResponse = this.currentAccumulatedResponse || '';
+
+        if (contentEl && asstBubbleWrapper) {
+            if (accumulatedResponse.trim()) {
+                const rtl = this.isRTLText(accumulatedResponse);
+                contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
+                contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
+
+                const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
+                let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
+                if (!actionsContainer) {
+                    actionsContainer = document.createElement('div');
+                    actionsContainer.className = 'msg-actions-container w-full';
+                    contentEl.parentNode.appendChild(actionsContainer);
+                }
+                actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedResponse, null, hasTables);
+                asstBubbleWrapper.dataset.rawContent = accumulatedResponse;
+
+                this.highlightCode(contentEl);
+                this.enhanceTablesAndMeters(contentEl);
+            } else {
+                contentEl.innerHTML = `
+                    <div class="text-xs text-gray-400 italic py-1 flex items-center gap-1.5" dir="rtl">
+                        <i data-lucide="stop-circle" class="w-3.5 h-3.5 text-rose-400"></i>
+                        <span>تولید پاسخ متوقف شد.</span>
+                    </div>
+                `;
+            }
+        }
+
+        this.hideQueuePopup(true);
         this.setStreamingUI(false);
+        this.scrollToBottom();
+        if (window.lucide) lucide.createIcons();
+
         App.toast('تولید پاسخ متوقف شد', 'info');
     },
 
@@ -1140,7 +1211,7 @@ const Chat = {
         // Display user message
         const currentFile = this.selectedFile;
         const displayPrompt = promptText || (currentFile ? 'بررسی و خلاصه‌سازی فایل' : '');
-        this.appendMessage('user', displayPrompt, bool(currentFile), currentFile ? currentFile.name : '');
+        this.appendMessage('user', displayPrompt, Boolean(currentFile), currentFile ? currentFile.name : '');
         this.scrollToBottom();
 
         // Clear input and attachment
@@ -1186,6 +1257,9 @@ const Chat = {
         this.isStreaming = true;
         this.setStreamingUI(true);
         this.abortController = new AbortController();
+        this.activeContentEl = contentEl;
+        this.activeBubbleWrapper = asstBubbleWrapper;
+        this.currentAccumulatedResponse = '';
         let accumulatedResponse = '';
         let receivedExportIntent = null;
 
@@ -1198,6 +1272,10 @@ const Chat = {
                 body: formData,
                 signal: this.abortController.signal
             });
+
+            if (!this.isStreaming) {
+                return;
+            }
 
             if (response.status === 401) {
                 this.renderErrorCard(contentEl, 'نشست کاربری شما منقضی شده است. لطفاً مجدداً وارد حساب کاربری شوید.');
@@ -1222,18 +1300,25 @@ const Chat = {
             }
 
             const reader = response.body.getReader();
+            this.activeReader = reader;
             const decoder = new TextDecoder('utf-8');
             let buffer = '';
 
             while (true) {
+                if (!this.isStreaming) {
+                    try { await reader.cancel(); } catch (e) {}
+                    break;
+                }
+
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done || !this.isStreaming) break;
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
                 buffer = lines.pop();
 
                 for (const line of lines) {
+                    if (!this.isStreaming) break;
                     const trimmed = line.trim();
                     if (trimmed.startsWith('data: ')) {
                         const jsonStr = trimmed.substring(6);
@@ -1296,6 +1381,7 @@ const Chat = {
                             // 6. Handle Token Stream
                             if (parsed.token) {
                                 accumulatedResponse += parsed.token;
+                                this.currentAccumulatedResponse = accumulatedResponse;
                                 const rtl = this.isRTLText(accumulatedResponse);
                                 contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
                                 contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
@@ -1310,7 +1396,7 @@ const Chat = {
                 }
             }
 
-            if (accumulatedResponse.trim()) {
+            if (accumulatedResponse.trim() && !asstBubbleWrapper.dataset.rawContent) {
                 const rtl = this.isRTLText(accumulatedResponse);
                 contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
                 contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
@@ -1331,8 +1417,8 @@ const Chat = {
 
         } catch (err) {
             this.hideQueuePopup(true);
-            if (err.name === 'AbortError') {
-                if (accumulatedResponse.trim()) {
+            if (err.name === 'AbortError' || !this.isStreaming) {
+                if (accumulatedResponse.trim() && !asstBubbleWrapper.dataset.rawContent) {
                     const rtl = this.isRTLText(accumulatedResponse);
                     contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
                     contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
@@ -1359,6 +1445,10 @@ const Chat = {
             this.isStreaming = false;
             this.setStreamingUI(false);
             this.abortController = null;
+            this.activeReader = null;
+            this.activeContentEl = null;
+            this.activeBubbleWrapper = null;
+            this.currentAccumulatedResponse = '';
             if (contentEl) {
                 this.enhanceTablesAndMeters(contentEl);
             }
