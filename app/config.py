@@ -36,7 +36,8 @@ class Settings(BaseModel):
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24 * 7)))
 
-    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    _raw_ollama = os.getenv("OLLAMA_BASE_URL", "http://0.0.0.0:11434")
+    OLLAMA_BASE_URL: str = _raw_ollama if _raw_ollama.startswith(("http://", "https://")) else f"http://{_raw_ollama}"
     DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "qwen:0.5b")
 
     # Admin credentials - supports both ADMIN_USERNAME and DEFAULT_ADMIN_USERNAME

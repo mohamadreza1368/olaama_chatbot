@@ -85,7 +85,7 @@ A production-ready, full-stack, local AI Assistant powered by **Ollama** and **F
    ```env
    ADMIN_USERNAME=admin
    ADMIN_PASSWORD=admin123
-   OLLAMA_BASE_URL=http://127.0.0.1:11434
+   OLLAMA_BASE_URL=http://0.0.0.0:11434
    DEFAULT_MODEL=qwen:0.5b
    DATABASE_URL=sqlite:///./chatbot.db
    HOST=127.0.0.1
@@ -129,7 +129,7 @@ Deploy the application effortlessly in an isolated, production-ready container.
    ```
 
    > [!NOTE]
-   > - The container automatically connects to Ollama running on your host machine via `http://host.docker.internal:11434`.
+   > - The container automatically connects to Ollama running on your host machine via `http://0.0.0.0:11434`.
    > - SQLite data (`chatbot.db`) and uploaded skills (`skills/`) are persisted on the host through Docker volume mounts.
    > - Built-in health checks verify container availability at `/api/health`.
 
@@ -146,9 +146,9 @@ Deploy the application effortlessly in an isolated, production-ready container.
 ### 🪞 Mirrors & Internal Repositories (میرور داکر و مخزن پکیج‌های سیستم‌عامل)
 
 پروژه به صورت پیش‌فرض با مخازن داخلی سازمان پیکربندی شده است:
-1. **داکر میرور (`dockehub.ime.co.ir`)**:
-   - در فایل `.env`: متغیر `DOCKER_MIRROR=dockehub.ime.co.ir/`
-   - ایمیج پایه پایتون از `dockehub.ime.co.ir/python:3.10-slim` دریافت می‌شود.
+1. **داکر میرور (`http://dockerhub.ime.co.ir`)**:
+   - در فایل `.env`: متغیر `DOCKER_MIRROR=dockerhub.ime.co.ir/` و `DOCKER_REGISTRY_MIRROR=http://dockerhub.ime.co.ir`
+   - ایمیج پایه پایتون از `dockerhub.ime.co.ir/python:3.10-slim` دریافت می‌شود.
 
 2. **مخزن لینوکس دبیان (`linux.repo.ime.co.ir`)**:
    - در فایل `.env`: متغیر `DEBIAN_MIRROR=https://linux.repo.ime.co.ir/repository/debian`
@@ -157,7 +157,7 @@ Deploy the application effortlessly in an isolated, production-ready container.
 همچنین می‌توانید داکر میرور را به صورت سراسری در تنظیمات داکر (`daemon.json` یا Docker Desktop -> Settings -> Docker Engine) اعمال کنید:
 ```json
 {
-  "registry-mirrors": ["https://dockehub.ime.co.ir/"]
+  "registry-mirrors": ["http://dockerhub.ime.co.ir"]
 }
 ```
 
@@ -175,7 +175,7 @@ docker run -d \
   -v "$(pwd)/chatbot.db:/app/chatbot.db" \
   -v "$(pwd)/skills:/app/skills" \
   --add-host=host.docker.internal:host-gateway \
-  -e OLLAMA_BASE_URL="http://host.docker.internal:11434" \
+  -e OLLAMA_BASE_URL="http://0.0.0.0:11434" \
   ime-ollama-chatbot
 ```
 

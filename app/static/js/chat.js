@@ -1498,7 +1498,6 @@ const Chat = {
             }, 2000);
         }
     }
-    }
 };
 
 function bool(val) {

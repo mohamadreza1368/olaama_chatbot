@@ -3,7 +3,7 @@
 # Optimized for lightweight deployment, high security, and offline usage
 # ==============================================================================
 
-ARG DOCKER_MIRROR=dockehub.ime.co.ir/
+ARG DOCKER_MIRROR=dockerhub.ime.co.ir/
 FROM ${DOCKER_MIRROR}python:3.10-slim
 
 # Python & Environment Configuration
@@ -12,7 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
     PORT=8000 \
     DATABASE_URL=sqlite:///./chatbot.db \
-    OLLAMA_BASE_URL=http://host.docker.internal:11434
+    OLLAMA_BASE_URL=http://0.0.0.0:11434
 
 WORKDIR /app
 
