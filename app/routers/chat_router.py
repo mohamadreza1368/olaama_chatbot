@@ -4,8 +4,10 @@ import json
 import re
 import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
-from fastapi.responses import StreamingResponse
+from urllib.parse import quote
+from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from app.database import get_db, User, ChatSession, ChatMessage, PromptLog, Skill, get_system_model, get_system_prompt, get_reference_prompts, check_and_reset_user_daily_tokens, get_active_skills
 from app.auth import get_current_user
@@ -13,7 +15,15 @@ from app.ollama_service import ollama_service
 from app.queue_service import request_queue
 from app.document_parser import extract_text_from_file
 from app.security_service import security_service
+from app.export_service import export_to_docx, export_to_xlsx, detect_export_intent
 from app.config import settings
+
+class ExportRequest(BaseModel):
+    format: str = "docx"
+    content: Optional[str] = None
+    session_id: Optional[str] = None
+    message_id: Optional[int] = None
+    title: Optional[str] = None
 
 router = APIRouter(prefix="/api/chat", tags=["Chat & Sessions"])
 
@@ -338,6 +348,8 @@ async def send_message(
     user_id_val = current_user.id
     username_val = current_user.username
 
+    user_export_intent = detect_export_intent(user_prompt_clean)
+
     # Register in Request Queue
     ticket_id = await request_queue.enter_queue(user_id_val, username_val)
 
@@ -365,7 +377,7 @@ async def send_message(
                     yield f"data: {json.dumps({'token': token, 'title': sess.title, 'done': False})}\n\n"
                 
                 if chunk_data.get("done", False):
-                    yield f"data: {json.dumps({'token': '', 'title': sess.title, 'done': True})}\n\n"
+                    yield f"data: {json.dumps({'token': '', 'title': sess.title, 'done': True, 'export_intent': user_export_intent})}\n\n"
                     break
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -416,7 +428,7 @@ async def send_message(
             bg_db.commit()
 
             if db_user:
-                yield f"data: {json.dumps({'tokens_used': db_user.tokens_used, 'token_quota': db_user.token_quota, 'update_stats': True})}\n\n"
+                yield f"data: {json.dumps({'tokens_used': db_user.tokens_used, 'token_quota': db_user.token_quota, 'update_stats': True, 'export_intent': user_export_intent})}\n\n"
 
         except Exception:
             bg_db.rollback()
@@ -431,4 +443,105 @@ async def send_message(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no"
         }
+    )
+
+@router.post("/export")
+def export_chat_post(
+    req: ExportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return handle_export(
+        format_type=req.format,
+        content=req.content,
+        session_id=req.session_id,
+        message_id=req.message_id,
+        title=req.title,
+        db=db,
+        current_user=current_user
+    )
+
+@router.get("/export")
+def export_chat_get(
+    format: str = Query("docx", description="Export format: docx or xlsx"),
+    session_id: Optional[str] = Query(None),
+    message_id: Optional[int] = Query(None),
+    title: Optional[str] = Query(None),
+    content: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return handle_export(
+        format_type=format,
+        content=content,
+        session_id=session_id,
+        message_id=message_id,
+        title=title,
+        db=db,
+        current_user=current_user
+    )
+
+def handle_export(
+    format_type: str,
+    content: Optional[str],
+    session_id: Optional[str],
+    message_id: Optional[int],
+    title: Optional[str],
+    db: Session,
+    current_user: User
+):
+    export_content = content
+    doc_title = title or "گزارش تحلیلی بورس کالا"
+
+    if not export_content:
+        if message_id:
+            msg = db.query(ChatMessage).filter(
+                ChatMessage.id == message_id,
+                ChatMessage.user_id == current_user.id
+            ).first()
+            if not msg:
+                raise HTTPException(status_code=404, detail="پیام مورد نظر یافت نشد.")
+            export_content = msg.content
+        elif session_id:
+            session_id = security_service.validate_session_id(session_id)
+            sess = db.query(ChatSession).filter(
+                ChatSession.id == session_id,
+                ChatSession.user_id == current_user.id
+            ).first()
+            if not sess:
+                raise HTTPException(status_code=404, detail="گفتگوی مورد نظر یافت نشد.")
+            doc_title = title or sess.title
+            
+            # Combine conversation messages
+            parts = []
+            for m in sess.messages:
+                prefix = "👤 **پرسش کاربر:**\n" if m.role == "user" else "🤖 **پاسخ دستیار هوشمند:**\n"
+                parts.append(f"{prefix}{m.content}\n")
+            export_content = "\n\n---\n\n".join(parts)
+
+    if not export_content or not export_content.strip():
+        raise HTTPException(status_code=400, detail="محتوایی برای تولید خروجی فایل وجود ندارد.")
+
+    format_clean = format_type.lower().replace(".", "").strip()
+    clean_title = re.sub(r'[\/\\:*?"<>|]', '_', doc_title).strip() or "گزارش_تحلیلی"
+
+    if format_clean in ["xlsx", "excel"]:
+        file_bytes = export_to_xlsx(export_content, title=doc_title)
+        filename = f"{clean_title}.xlsx"
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else: # default docx
+        file_bytes = export_to_docx(export_content, title=doc_title)
+        filename = f"{clean_title}.docx"
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+    encoded_filename = quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"report.{format_clean}\"; filename*=UTF-8''{encoded_filename}",
+        "Access-Control-Expose-Headers": "Content-Disposition"
+    }
+
+    return Response(
+        content=file_bytes,
+        media_type=media_type,
+        headers=headers
     )

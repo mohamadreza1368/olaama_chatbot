@@ -4,8 +4,9 @@ import unittest
 import asyncio
 from fastapi.testclient import TestClient
 
-base = r"C:\Users\IME\.gemini\antigravity\scratch\ollama_chatbot"
-sys.path.insert(0, base)
+base = os.path.dirname(os.path.abspath(__file__))
+if base not in sys.path:
+    sys.path.insert(0, base)
 
 from app.main import app
 from app.routers.chat_router import generate_smart_title

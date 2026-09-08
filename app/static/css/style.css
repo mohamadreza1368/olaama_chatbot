@@ -240,3 +240,293 @@ button {
     overflow: hidden !important;
     visibility: hidden !important;
 }
+
+/* ============================================================
+   OFFICE DASHBOARD, METERS & VISUAL CHARTS (طراحی اداری نمودارها)
+   ============================================================ */
+.office-meter-card {
+    margin: 1.15rem 0;
+    border-radius: 1rem;
+    padding: 1.15rem;
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(20, 184, 166, 0.08) 100%);
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(8px);
+    transition: all 0.3s ease;
+    direction: rtl;
+    text-align: right;
+}
+.dark .office-meter-card {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(24, 24, 27, 0.75) 100%);
+    border-color: rgba(16, 185, 129, 0.22);
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+}
+.office-meter-card:hover {
+    border-color: rgba(16, 185, 129, 0.45);
+    box-shadow: 0 8px 25px -4px rgba(16, 185, 129, 0.15);
+}
+
+.office-meter-bar-track {
+    width: 100%;
+    height: 0.85rem;
+    background: rgba(156, 163, 175, 0.2);
+    border-radius: 9999px;
+    overflow: hidden;
+    padding: 2px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.08);
+}
+.dark .office-meter-bar-track {
+    background: rgba(60, 60, 60, 0.6);
+}
+
+.office-meter-bar-fill {
+    height: 100%;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, #10b981 0%, #06b6d4 100%);
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+.office-meter-bar-fill.warning {
+    background: linear-gradient(90deg, #f59e0b 0%, #eab308 100%);
+}
+.office-meter-bar-fill.danger {
+    background: linear-gradient(90deg, #ef4444 0%, #f43f5e 100%);
+}
+
+.office-meter-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%);
+    animation: shimmer 2.5s infinite;
+    border-radius: 9999px;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* Status Badges */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.22rem 0.65rem;
+    border-radius: 9999px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+.status-badge-success {
+    background: rgba(16, 185, 129, 0.12);
+    color: #059669;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.dark .status-badge-success {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.35);
+}
+
+.status-badge-warning {
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.dark .status-badge-warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+.status-badge-danger {
+    background: rgba(239, 68, 68, 0.12);
+    color: #dc2626;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.dark .status-badge-danger {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
+.status-badge-info {
+    background: rgba(14, 165, 233, 0.12);
+    color: #0284c7;
+    border: 1px solid rgba(14, 165, 233, 0.3);
+}
+.dark .status-badge-info {
+    background: rgba(14, 165, 233, 0.2);
+    color: #38bdf8;
+    border-color: rgba(14, 165, 233, 0.35);
+}
+
+/* ============================================================
+   EXECUTIVE OFFICE TABLES (جداول اداری مدرن و استاندارد)
+   ============================================================ */
+.prose-custom table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 1.25rem 0;
+    border-radius: 0.85rem;
+    overflow: hidden;
+    border: 1px solid rgba(229, 231, 235, 1);
+    font-size: 0.84rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+    direction: rtl;
+}
+.dark .prose-custom table {
+    border-color: rgba(60, 60, 60, 0.8);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+    background-color: #1a1a1a;
+}
+
+.prose-custom thead {
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    border-bottom: 2px solid rgba(203, 213, 225, 0.8);
+}
+.dark .prose-custom thead {
+    background: linear-gradient(180deg, #282828 0%, #202020 100%);
+    border-bottom: 2px solid rgba(75, 85, 99, 0.5);
+}
+
+.prose-custom th {
+    padding: 0.75rem 1rem;
+    font-weight: 700;
+    color: #334155;
+    text-align: right;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+    letter-spacing: 0.01em;
+}
+.dark .prose-custom th {
+    color: #e2e8f0;
+    border-bottom: 1px solid rgba(60, 60, 60, 0.8);
+}
+
+.prose-custom td {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid rgba(241, 245, 249, 1);
+    color: #374151;
+    vertical-align: middle;
+    text-align: right;
+}
+.dark .prose-custom td {
+    border-bottom: 1px solid rgba(48, 48, 48, 0.7);
+    color: #cbd5e1;
+}
+
+.prose-custom tbody tr:nth-child(even) {
+    background-color: rgba(248, 250, 252, 0.7);
+}
+.dark .prose-custom tbody tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.prose-custom tbody tr:hover {
+    background-color: rgba(16, 185, 129, 0.07) !important;
+}
+.dark .prose-custom tbody tr:hover {
+    background-color: rgba(16, 185, 129, 0.12) !important;
+}
+
+.prose-custom tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ============================================================
+   OFFICE FILE EXPORT & DOWNLOAD CARDS (کارت دانلود فایل اداری)
+   ============================================================ */
+.office-download-card {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.08) 50%, rgba(20, 184, 166, 0.08) 100%);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 1rem;
+    transition: all 0.25s ease;
+}
+.dark .office-download-card {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(59, 130, 246, 0.10) 50%, rgba(20, 184, 166, 0.10) 100%);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.office-download-card:hover {
+    box-shadow: 0 8px 24px -4px rgba(16, 185, 129, 0.18);
+    border-color: rgba(16, 185, 129, 0.5);
+}
+
+.msg-action-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid rgba(229, 231, 235, 0.6);
+}
+.dark .msg-action-bar {
+    border-top-color: rgba(60, 60, 60, 0.5);
+}
+
+.msg-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    transition: all 0.18s ease;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(120, 120, 120, 0.08);
+}
+.msg-action-btn:hover {
+    transform: translateY(-1px);
+}
+.msg-action-btn-copy {
+    color: #4b5563;
+}
+.dark .msg-action-btn-copy {
+    color: #9ca3af;
+}
+.msg-action-btn-copy:hover {
+    background: rgba(120, 120, 120, 0.18);
+    color: #111827;
+}
+.dark .msg-action-btn-copy:hover {
+    color: #f3f4f6;
+}
+
+.msg-action-btn-docx {
+    color: #2563eb;
+    background: rgba(37, 99, 235, 0.08);
+    border: 1px solid rgba(37, 99, 235, 0.2);
+}
+.dark .msg-action-btn-docx {
+    color: #60a5fa;
+    background: rgba(37, 99, 235, 0.15);
+    border-color: rgba(37, 99, 235, 0.3);
+}
+.msg-action-btn-docx:hover {
+    background: rgba(37, 99, 235, 0.2);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+}
+
+.msg-action-btn-xlsx {
+    color: #059669;
+    background: rgba(5, 150, 105, 0.08);
+    border: 1px solid rgba(5, 150, 105, 0.2);
+}
+.dark .msg-action-btn-xlsx {
+    color: #34d399;
+    background: rgba(5, 150, 105, 0.15);
+    border-color: rgba(5, 150, 105, 0.3);
+}
+.msg-action-btn-xlsx:hover {
+    background: rgba(5, 150, 105, 0.2);
+    box-shadow: 0 2px 8px rgba(5, 150, 105, 0.2);
+}
+
+

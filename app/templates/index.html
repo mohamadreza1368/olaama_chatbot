@@ -121,14 +121,9 @@
                     </div>
 
                     <div class="flex items-center gap-2 mr-2">
-                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" id="ollama-status-indicator"></span>
-                        <div class="flex items-center gap-1.5">
-                            <span class="text-xs text-gray-500 dark:text-gray-400">مدل فعال:</span>
-                            <span class="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-[#2c2c2c] border border-gray-300 dark:border-gray-700 font-mono text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                                <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
-                                <span id="active-model-display">qwen:0.5b</span>
-                            </span>
-                        </div>
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" id="ollama-status-indicator" title="وضعیت ارتباط دستیار هوشمند فعال است"></span>
+                        <!-- Hidden element for JS compatibility -->
+                        <span id="active-model-display" class="hidden"></span>
                         <div class="hidden sm:flex items-center gap-1.5" id="active-skills-header-chip" title="مهارت‌های تخصصی بارگذاری‌شده">
                             <span class="text-xs px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 font-mono text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
                                 <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>
@@ -138,7 +133,26 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    <span id="current-chat-title-header" class="text-xs font-semibold text-gray-700 dark:text-gray-300 max-w-[220px] truncate">گفتگوی جدید</span>
+                    <span id="current-chat-title-header" class="text-xs font-semibold text-gray-700 dark:text-gray-300 max-w-[200px] truncate">گفتگوی جدید</span>
+                    
+                    <!-- Session Export Dropdown Button -->
+                    <div class="relative">
+                        <button id="btn-export-dropdown" type="button" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2a2a2a] hover:bg-gray-100 dark:hover:bg-[#333] text-xs text-gray-700 dark:text-gray-200 transition shadow-sm cursor-pointer" title="خروجی کل گفتگو">
+                            <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-500"></i>
+                            <span class="hidden sm:inline text-[11px] font-medium">خروجی فایل</span>
+                            <i data-lucide="chevron-down" class="w-3 h-3 text-gray-400"></i>
+                        </button>
+                        <div id="export-dropdown-menu" class="hidden absolute left-0 mt-1.5 w-44 bg-white dark:bg-[#242424] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl py-1 z-50 text-xs text-gray-800 dark:text-gray-200 animate-fade-in">
+                            <button id="btn-export-session-docx" type="button" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition text-right cursor-pointer">
+                                <i data-lucide="file-text" class="w-4 h-4 text-blue-500"></i>
+                                <span>فایل Word (.docx)</span>
+                            </button>
+                            <button id="btn-export-session-xlsx" type="button" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-gray-700 dark:text-gray-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition text-right cursor-pointer">
+                                <i data-lucide="sheet" class="w-4 h-4 text-emerald-500"></i>
+                                <span>فایل Excel (.xlsx)</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </header>
 
@@ -208,7 +222,12 @@
                             <i data-lucide="paperclip" class="w-5 h-5"></i>
                         </button>
                         <textarea id="chat-input" rows="1" placeholder="پیام خود را بنویسید... (برای انتخاب مهارت / را تایپ کنید)" class="flex-1 bg-transparent resize-none border-0 outline-none text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 max-h-44 py-2 px-1 leading-relaxed custom-scrollbar" dir="auto"></textarea>
-                        <button id="btn-send-message" class="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center" title="ارسال پیام">
+                        <!-- Stop Generation Button (دکمه توقف تولید پاسخ) -->
+                        <button id="btn-stop-message" class="hidden p-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white transition items-center justify-center cursor-pointer shadow-md animate-pulse shrink-0" title="توقف تولید پاسخ (Stop)">
+                            <i data-lucide="square" class="w-5 h-5 fill-current"></i>
+                        </button>
+                        <!-- Send Button (ارسال پیام) -->
+                        <button id="btn-send-message" class="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center shrink-0" title="ارسال پیام">
                             <i data-lucide="arrow-up" class="w-5 h-5"></i>
                         </button>
                     </div>

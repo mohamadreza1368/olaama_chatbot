@@ -1,5 +1,5 @@
 // Chat & Session Controller
-// Configure Marked with native Code Block Header & Copy Button
+// Configure Marked with Native Visual Dashboard, Meter/Chart Renderer, & Code Block Header
 if (window.marked) {
     const customCodeRenderer = {
         code(tokenOrCode, infostring, escaped) {
@@ -14,7 +14,7 @@ if (window.marked) {
                 lang = infostring || 'code';
             }
 
-            lang = lang.trim().toLowerCase().split(/\s+/)[0] || 'code';
+            lang = (lang || 'code').trim().toLowerCase().split(/\s+/)[0];
 
             const safeCode = code
                 .replace(/&/g, '&amp;')
@@ -23,6 +23,24 @@ if (window.marked) {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
 
+            const trimmedCode = code.trim();
+
+            // 1. Markdown Table mistakenly placed in code block
+            if (trimmedCode.startsWith('|') && trimmedCode.includes('\n|') && trimmedCode.includes('---')) {
+                return marked.parse(trimmedCode);
+            }
+
+            // 2. ASCII Meter / Progress Bar / Health / Performance Status
+            if (window.Chat && Chat.isMeterOrChart(code, lang)) {
+                return Chat.renderOfficeMeterCard(code, safeCode);
+            }
+
+            // 3. Key-Value Bar Chart
+            if (window.Chat && Chat.isKeyValueChart(code, lang)) {
+                return Chat.renderOfficeBarChart(code, safeCode);
+            }
+
+            // 4. Default Code Block with Copy Button
             return `
                 <div class="code-block-wrapper my-3 rounded-xl overflow-hidden border border-gray-700/60 bg-[#161616] shadow-lg text-left" dir="ltr">
                     <div class="code-block-header flex items-center justify-between px-3.5 py-1.5 bg-[#252525] border-b border-gray-700/60 select-none text-xs font-mono">
@@ -51,6 +69,267 @@ const Chat = {
     activeSlashIndex: 0,
     isSlashOpen: false,
     isStreaming: false,
+    abortController: null,
+
+    toPersianDigits(str) {
+        if (str === null || str === undefined) return '';
+        const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+        return String(str).replace(/[0-9]/g, w => persianDigits[+w]);
+    },
+
+    isMeterOrChart(code, lang) {
+        if (['meter', 'progress', 'status', 'gauge', 'ascii'].includes(lang)) return true;
+        const hasBlocks = /[█■#=]{2,}/.test(code) && /[░□\-_ ]{1,}/.test(code);
+        const hasBracketMeter = /\[[█■#=░□\-_ ]{3,}\]/.test(code);
+        const hasStatusWords = /(نرمال|مرزی|بحرانی|نیاز به درمان|هشدار|سالم|طبیعی|موفق|درمان)/.test(code);
+        const hasPercent = /\d+(\.\d+)?%/.test(code);
+        return (hasBlocks || hasBracketMeter) || (hasStatusWords && (hasPercent || code.includes(':')));
+    },
+
+    renderOfficeMeterCard(rawCode, safeCode) {
+        const lines = rawCode.split('\n').map(l => l.trim()).filter(Boolean);
+        let title = 'گزارش شاخص و وضعیت آماری';
+        let percent = 0;
+        let percentFound = false;
+        const badges = [];
+
+        for (const line of lines) {
+            if (/وضعیت|شاخص|پیشرفت|سلامت|گزارش/.test(line) && !line.includes('[') && !line.includes('█')) {
+                title = line.replace(/[:\-#*]/g, '').trim();
+            } else if (line.includes(':') && (line.includes('[') || line.includes('█'))) {
+                const parts = line.split(':');
+                if (parts[0].trim()) {
+                    title = parts[0].replace(/[:\-#*]/g, '').trim();
+                }
+            }
+
+            const pctMatch = line.match(/(\d+(?:\.\d+)?)\s*%/);
+            if (pctMatch && !percentFound) {
+                percent = parseFloat(pctMatch[1]);
+                percentFound = true;
+            }
+
+            const meterMatch = line.match(/\[([█■#=░□\-_ ]+)\]/);
+            if (meterMatch && !percentFound) {
+                const meterStr = meterMatch[1];
+                const filled = (meterStr.match(/[█■#=]/g) || []).length;
+                const total = meterStr.length;
+                if (total > 0) {
+                    percent = Math.round((filled / total) * 100);
+                    percentFound = true;
+                }
+            }
+
+            const tokens = line.split(/\s{2,}|(?<=\))\s+/);
+            for (const t of tokens) {
+                const cleanT = t.trim();
+                if (/نرمال|طبیعی|سالم|تایید|موفق|عالی/.test(cleanT)) {
+                    badges.push({ type: 'success', text: cleanT.replace(/^[!⚠️✅❌]+/, '').trim() });
+                } else if (/مرزی|هشدار|در انتظار|متوسط/.test(cleanT)) {
+                    badges.push({ type: 'warning', text: cleanT.replace(/^[!⚠️✅❌]+/, '').trim() });
+                } else if (/بحرانی|خطر|نیاز به درمان|رد شده|ناموفق|هشدار شدید/.test(cleanT)) {
+                    badges.push({ type: 'danger', text: cleanT.replace(/^[!⚠️✅❌]+/, '').trim() });
+                }
+            }
+        }
+
+        if (!percentFound) percent = 50;
+        percent = Math.max(0, Math.min(100, percent));
+
+        let fillClass = '';
+        let icon = 'activity';
+        if (badges.some(b => b.type === 'danger') || percent < 40) {
+            fillClass = 'danger';
+            icon = 'alert-triangle';
+        } else if (badges.some(b => b.type === 'warning') || (percent >= 40 && percent < 70)) {
+            fillClass = 'warning';
+            icon = 'alert-circle';
+        }
+
+        const badgesHtml = badges.map(b => {
+            let cls = 'status-badge-info';
+            let iconName = 'info';
+            if (b.type === 'success') { cls = 'status-badge-success'; iconName = 'check-circle'; }
+            if (b.type === 'warning') { cls = 'status-badge-warning'; iconName = 'alert-circle'; }
+            if (b.type === 'danger') { cls = 'status-badge-danger'; iconName = 'alert-triangle'; }
+            return `<span class="status-badge ${cls}"><i data-lucide="${iconName}" class="w-3.5 h-3.5"></i><span>${b.text}</span></span>`;
+        }).join(' ');
+
+        const cardId = 'chart-card-' + Math.random().toString(36).substring(2, 9);
+
+        return `
+            <div class="office-meter-card my-3 select-none" id="${cardId}">
+                <div class="flex items-center justify-between gap-3 mb-2.5">
+                    <div class="flex items-center gap-2 font-bold text-sm text-gray-800 dark:text-gray-100">
+                        <span class="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                            <i data-lucide="${icon}" class="w-4 h-4"></i>
+                        </span>
+                        <span>${title}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                            ${this.toPersianDigits(percent)}٪
+                        </span>
+                        <button type="button" class="text-[11px] text-gray-400 hover:text-gray-200 px-1.5 py-0.5 rounded hover:bg-white/10 transition cursor-pointer" onclick="Chat.toggleVisualCode('${cardId}')" title="تغییر نمایش متنی / گرافیکی">
+                            📋
+                        </button>
+                    </div>
+                </div>
+                <div class="office-meter-bar-track my-2">
+                    <div class="office-meter-bar-fill ${fillClass}" style="width: ${percent}%"></div>
+                </div>
+                ${badgesHtml ? `<div class="flex flex-wrap items-center gap-2 mt-3 pt-2.5 border-t border-gray-200/60 dark:border-gray-700/50">${badgesHtml}</div>` : ''}
+                <div class="raw-code-view hidden mt-3 pt-2 border-t border-gray-700/60 text-left font-mono text-xs text-gray-300" dir="ltr">
+                    <pre class="p-2 bg-black/40 rounded-lg overflow-x-auto">${safeCode}</pre>
+                </div>
+            </div>
+        `;
+    },
+
+    isKeyValueChart(code, lang) {
+        if (['chart', 'bar', 'graph', 'data'].includes(lang)) return true;
+        const lines = code.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length < 2) return false;
+        let numMatches = 0;
+        for (const line of lines) {
+            if (/^[^:\-=]+[:\-=\t]+\s*[\d,.]+%?$/.test(line)) {
+                numMatches++;
+            }
+        }
+        return numMatches >= 2 && (numMatches / lines.length) >= 0.7;
+    },
+
+    renderOfficeBarChart(rawCode, safeCode) {
+        const lines = rawCode.split('\n').map(l => l.trim()).filter(Boolean);
+        const items = [];
+        let maxVal = 0;
+
+        for (const line of lines) {
+            const match = line.match(/^([^:\-=]+)[:\-=\t]+\s*([\d,.]+)(%?)$/);
+            if (match) {
+                const label = match[1].replace(/^[\*\-#\d.]+\s*/, '').trim();
+                const rawNum = parseFloat(match[2].replace(/,/g, ''));
+                const isPercent = match[3] === '%' || rawNum <= 100;
+                if (!isNaN(rawNum)) {
+                    if (rawNum > maxVal) maxVal = rawNum;
+                    items.push({ label, val: rawNum, isPercent });
+                }
+            }
+        }
+
+        if (items.length === 0) {
+            return `
+                <div class="code-block-wrapper my-3 rounded-xl overflow-hidden border border-gray-700/60 bg-[#161616] shadow-lg text-left" dir="ltr">
+                    <pre class="p-3.5 m-0 bg-[#161616] overflow-x-auto text-[13px] font-mono leading-relaxed"><code>${safeCode}</code></pre>
+                </div>
+            `;
+        }
+
+        if (maxVal === 0) maxVal = 100;
+
+        const colors = [
+            'from-emerald-500 to-teal-400',
+            'from-cyan-500 to-blue-400',
+            'from-indigo-500 to-sky-400',
+            'from-amber-500 to-yellow-400',
+            'from-violet-500 to-purple-400'
+        ];
+
+        const barsHtml = items.map((it, idx) => {
+            const pct = Math.min(100, Math.round((it.val / maxVal) * 100));
+            const col = colors[idx % colors.length];
+            const displayVal = it.isPercent ? `${this.toPersianDigits(it.val)}٪` : this.toPersianDigits(it.val);
+            return `
+                <div class="space-y-1 my-2">
+                    <div class="flex items-center justify-between text-xs font-semibold text-gray-700 dark:text-gray-200">
+                        <span class="truncate max-w-[70%]">${it.label}</span>
+                        <span class="font-mono text-emerald-600 dark:text-emerald-400">${displayVal}</span>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700/60 rounded-full h-2.5 overflow-hidden p-0.5">
+                        <div class="h-full rounded-full bg-gradient-to-r ${col} transition-all duration-700" style="width: ${pct}%"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const cardId = 'barchart-' + Math.random().toString(36).substring(2, 9);
+
+        return `
+            <div class="office-meter-card my-3 select-none" id="${cardId}">
+                <div class="flex items-center justify-between gap-3 mb-3 border-b border-gray-200/60 dark:border-gray-700/50 pb-2">
+                    <div class="flex items-center gap-2 font-bold text-sm text-gray-800 dark:text-gray-100">
+                        <span class="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                            <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                        </span>
+                        <span>نمودار تحلیلی شاخص‌ها</span>
+                    </div>
+                    <button type="button" class="text-[11px] text-gray-400 hover:text-gray-200 px-1.5 py-0.5 rounded hover:bg-white/10 transition cursor-pointer" onclick="Chat.toggleVisualCode('${cardId}')" title="تغییر نمایش متنی / گرافیکی">
+                        📋
+                    </button>
+                </div>
+                <div class="space-y-1">
+                    ${barsHtml}
+                </div>
+                <div class="raw-code-view hidden mt-3 pt-2 border-t border-gray-700/60 text-left font-mono text-xs text-gray-300" dir="ltr">
+                    <pre class="p-2 bg-black/40 rounded-lg overflow-x-auto">${safeCode}</pre>
+                </div>
+            </div>
+        `;
+    },
+
+    toggleVisualCode(cardId) {
+        const card = document.getElementById(cardId);
+        if (!card) return;
+        const rawView = card.querySelector('.raw-code-view');
+        if (rawView) {
+            rawView.classList.toggle('hidden');
+        }
+    },
+
+    formatVisualElements(html) {
+        if (!html) return '';
+        // Format inline ASCII progress bars [████░░░░] 80% in regular text
+        return html.replace(/\[([█■#=]{2,}[░□\-_ ]{1,})\]\s*(\(?(\d+(?:\.\d+)?%)\)?)?/g, (match, bar, p2, pct) => {
+            const filled = (bar.match(/[█■#=]/g) || []).length;
+            const total = bar.length;
+            const calcPct = pct ? parseFloat(pct) : Math.round((filled / total) * 100);
+            let colorClass = 'bg-emerald-500';
+            if (calcPct < 40) colorClass = 'bg-rose-500';
+            else if (calcPct < 70) colorClass = 'bg-amber-500';
+
+            return `
+                <span class="inline-flex items-center gap-2 px-2 py-0.5 my-0.5 rounded-lg bg-gray-100 dark:bg-[#2c2c2c] border border-gray-200 dark:border-gray-700 text-xs align-middle">
+                    <span class="w-24 h-2.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden inline-block align-middle p-0.5">
+                        <span class="h-full rounded-full ${colorClass} block transition-all" style="width: ${calcPct}%"></span>
+                    </span>
+                    <span class="font-mono text-[11px] font-bold text-gray-700 dark:text-gray-300">${Chat.toPersianDigits(calcPct)}٪</span>
+                </span>
+            `;
+        });
+    },
+
+    enhanceTablesAndMeters(container) {
+        if (!container) return;
+        const tables = container.querySelectorAll('table');
+        tables.forEach(table => {
+            if (table.dataset.enhanced) return;
+            table.dataset.enhanced = 'true';
+
+            const cells = table.querySelectorAll('td');
+            cells.forEach(td => {
+                const text = td.textContent.trim();
+                if (/^(✅\s*)?(نرمال|طبیعی|سالم|تایید شده|تایید|موفق|فعال|پایان یافته|عالی)$/.test(text)) {
+                    td.innerHTML = `<span class="status-badge status-badge-success"><i data-lucide="check" class="w-3 h-3"></i><span>${text.replace('✅', '').trim()}</span></span>`;
+                } else if (/^(⚠️\s*)?(مرزی|هشدار|در انتظار|متوسط|پیگیری)$/.test(text)) {
+                    td.innerHTML = `<span class="status-badge status-badge-warning"><i data-lucide="alert-circle" class="w-3 h-3"></i><span>${text.replace('⚠️', '').trim()}</span></span>`;
+                } else if (/^(❗\s*|❌\s*)?(بحرانی|خطر|نیاز به درمان|رد شده|ناموفق|متوقف|غیرفعال)$/.test(text)) {
+                    td.innerHTML = `<span class="status-badge status-badge-danger"><i data-lucide="alert-triangle" class="w-3 h-3"></i><span>${text.replace(/[❗❌]/g, '').trim()}</span></span>`;
+                }
+            });
+        });
+
+        if (window.lucide) lucide.createIcons();
+    },
 
     init() {
         this.loadActiveModel();
@@ -274,6 +553,9 @@ const Chat = {
         const sendBtn = document.getElementById('btn-send-message');
         if (sendBtn) sendBtn.addEventListener('click', () => this.sendMessage());
 
+        const stopBtn = document.getElementById('btn-stop-message');
+        if (stopBtn) stopBtn.addEventListener('click', () => this.stopStreaming());
+
         const attachBtn = document.getElementById('btn-attach-file');
         const fileInput = document.getElementById('file-upload-input');
         const removeFileBtn = document.getElementById('btn-remove-attachment');
@@ -338,6 +620,39 @@ const Chat = {
             });
         }
 
+        // Session Export Dropdown
+        const exportDropdownBtn = document.getElementById('btn-export-dropdown');
+        const exportDropdownMenu = document.getElementById('export-dropdown-menu');
+        const exportSessionDocx = document.getElementById('btn-export-session-docx');
+        const exportSessionXlsx = document.getElementById('btn-export-session-xlsx');
+
+        if (exportDropdownBtn && exportDropdownMenu) {
+            exportDropdownBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                exportDropdownMenu.classList.toggle('hidden');
+            });
+
+            document.addEventListener('click', () => {
+                if (!exportDropdownMenu.classList.contains('hidden')) {
+                    exportDropdownMenu.classList.add('hidden');
+                }
+            });
+        }
+
+        if (exportSessionDocx) {
+            exportSessionDocx.addEventListener('click', () => {
+                if (exportDropdownMenu) exportDropdownMenu.classList.add('hidden');
+                this.downloadExport({ format: 'docx', sessionId: this.currentSessionId });
+            });
+        }
+
+        if (exportSessionXlsx) {
+            exportSessionXlsx.addEventListener('click', () => {
+                if (exportDropdownMenu) exportDropdownMenu.classList.add('hidden');
+                this.downloadExport({ format: 'xlsx', sessionId: this.currentSessionId });
+            });
+        }
+
         // Global Delegation for Code Block Copy Button
         document.addEventListener('click', (e) => {
             const btn = e.target.closest('.copy-code-btn');
@@ -345,6 +660,36 @@ const Chat = {
                 e.preventDefault();
                 e.stopPropagation();
                 this.copyCodeBlock(btn);
+                return;
+            }
+
+            // Message Copy Button
+            const copyMsgBtn = e.target.closest('.copy-msg-btn');
+            if (copyMsgBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.copyMessageContent(copyMsgBtn);
+                return;
+            }
+
+            // Message Export DOCX
+            const exportDocxBtn = e.target.closest('.export-docx-btn, .btn-direct-download-docx');
+            if (exportDocxBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const content = this.getMessageRawContent(exportDocxBtn);
+                this.downloadExport({ format: 'docx', content });
+                return;
+            }
+
+            // Message Export XLSX
+            const exportXlsxBtn = e.target.closest('.export-xlsx-btn, .btn-direct-download-xlsx');
+            if (exportXlsxBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const content = this.getMessageRawContent(exportXlsxBtn);
+                this.downloadExport({ format: 'xlsx', content });
+                return;
             }
         });
 
@@ -642,7 +987,9 @@ const Chat = {
                 </div>
             `;
         } else {
-            const parsedHtml = marked.parse(content || '');
+            const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(content || '');
+            const actionsHtml = this.buildMessageActionToolbar(content, null, hasTables);
+            const parsedHtml = marked.parse(this.formatVisualElements(content || ''));
             renderedContent = `
                 <div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 shadow-sm">
                     AI
@@ -651,14 +998,19 @@ const Chat = {
                     <div class="prose-custom text-gray-800 dark:text-gray-200" dir="${dirAttr}">
                         ${parsedHtml}
                     </div>
+                    <div class="msg-actions-container w-full">
+                        ${actionsHtml}
+                    </div>
                 </div>
             `;
         }
 
+        msgDiv.dataset.rawContent = content || '';
         msgDiv.innerHTML = renderedContent;
         streamContainer.appendChild(msgDiv);
 
         this.highlightCode(msgDiv);
+        this.enhanceTablesAndMeters(msgDiv);
         return msgDiv;
     },
 
@@ -741,6 +1093,39 @@ const Chat = {
         }
     },
 
+    stopStreaming() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isStreaming = false;
+        this.setStreamingUI(false);
+        App.toast('تولید پاسخ متوقف شد', 'info');
+    },
+
+    setStreamingUI(isStreaming) {
+        const sendBtn = document.getElementById('btn-send-message');
+        const stopBtn = document.getElementById('btn-stop-message');
+        if (stopBtn) {
+            if (isStreaming) {
+                stopBtn.classList.remove('hidden');
+                stopBtn.classList.add('flex');
+            } else {
+                stopBtn.classList.add('hidden');
+                stopBtn.classList.remove('flex');
+            }
+        }
+        if (sendBtn) {
+            sendBtn.disabled = isStreaming;
+            if (isStreaming) {
+                sendBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            } else {
+                sendBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            }
+        }
+        if (window.lucide) lucide.createIcons();
+    },
+
     async sendMessage() {
         if (this.isStreaming) return;
 
@@ -799,7 +1184,10 @@ const Chat = {
         }
 
         this.isStreaming = true;
+        this.setStreamingUI(true);
+        this.abortController = new AbortController();
         let accumulatedResponse = '';
+        let receivedExportIntent = null;
 
         try {
             const response = await fetch('/api/chat/send', {
@@ -807,7 +1195,8 @@ const Chat = {
                 headers: {
                     'Authorization': `Bearer ${App.token}`
                 },
-                body: formData
+                body: formData,
+                signal: this.abortController.signal
             });
 
             if (response.status === 401) {
@@ -899,13 +1288,19 @@ const Chat = {
                                 App.updateTokenDisplay(parsed.tokens_used, parsed.token_quota);
                             }
 
-                            // 5. Handle Token Stream
+                            // 5. Handle Export Intent Flag
+                            if (parsed.export_intent) {
+                                receivedExportIntent = parsed.export_intent;
+                            }
+
+                            // 6. Handle Token Stream
                             if (parsed.token) {
                                 accumulatedResponse += parsed.token;
                                 const rtl = this.isRTLText(accumulatedResponse);
                                 contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
-                                contentEl.innerHTML = marked.parse(accumulatedResponse);
+                                contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
                                 this.highlightCode(contentEl);
+                                this.enhanceTablesAndMeters(contentEl);
                                 this.scrollToBottom();
                             }
                         } catch (e) {
@@ -918,20 +1313,191 @@ const Chat = {
             if (accumulatedResponse.trim()) {
                 const rtl = this.isRTLText(accumulatedResponse);
                 contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
-                contentEl.innerHTML = marked.parse(accumulatedResponse);
+                contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
+                
+                const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
+                let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
+                if (!actionsContainer) {
+                    actionsContainer = document.createElement('div');
+                    actionsContainer.className = 'msg-actions-container w-full';
+                    contentEl.parentNode.appendChild(actionsContainer);
+                }
+                actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedResponse, receivedExportIntent, hasTables);
+                asstBubbleWrapper.dataset.rawContent = accumulatedResponse;
+
                 this.highlightCode(contentEl);
+                this.enhanceTablesAndMeters(contentEl);
             }
 
         } catch (err) {
             this.hideQueuePopup(true);
+            if (err.name === 'AbortError') {
+                if (accumulatedResponse.trim()) {
+                    const rtl = this.isRTLText(accumulatedResponse);
+                    contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
+                    contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
+                    
+                    const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
+                    let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
+                    if (!actionsContainer) {
+                        actionsContainer = document.createElement('div');
+                        actionsContainer.className = 'msg-actions-container w-full';
+                        contentEl.parentNode.appendChild(actionsContainer);
+                    }
+                    actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedResponse, receivedExportIntent, hasTables);
+                    asstBubbleWrapper.dataset.rawContent = accumulatedResponse;
+
+                    this.highlightCode(contentEl);
+                    this.enhanceTablesAndMeters(contentEl);
+                }
+                return;
+            }
             this.renderErrorCard(contentEl, `ارتباط با سرور قطع شد: ${err.message}`);
             App.toast('خطا در ارتباط با سرور', 'error');
         } finally {
             this.hideQueuePopup(true);
             this.isStreaming = false;
+            this.setStreamingUI(false);
+            this.abortController = null;
+            if (contentEl) {
+                this.enhanceTablesAndMeters(contentEl);
+            }
             this.scrollToBottom();
             if (window.lucide) lucide.createIcons();
         }
+    },
+
+    buildMessageActionToolbar(content, exportIntent = null, hasTables = false) {
+        let downloadCardHtml = '';
+        if (exportIntent || hasTables) {
+            const subtitle = exportIntent === 'xlsx' 
+                ? 'فایل اکسل آماده دانلود و استفاده در نرم‌افزار Excel است.'
+                : (exportIntent === 'docx' 
+                    ? 'فایل ورد با فرمت‌بندی رسمی و تایپوگرافی سازمانی آماده دانلود است.'
+                    : 'فایل رسمی این گزارش با فرمت Word یا Excel آماده دانلود است.');
+            downloadCardHtml = `
+                <div class="office-download-card my-3 p-3 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 select-none">
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                            <i data-lucide="file-down" class="w-4 h-4"></i>
+                        </span>
+                        <div>
+                            <div class="text-xs font-bold text-gray-800 dark:text-gray-100">فایل تحلیلی آماده دانلود است</div>
+                            <div class="text-[11px] text-gray-500 dark:text-gray-400 leading-tight">${subtitle}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <button type="button" class="btn-direct-download-docx flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium shadow-sm transition cursor-pointer">
+                            <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                            <span>دانلود Word</span>
+                        </button>
+                        <button type="button" class="btn-direct-download-xlsx flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium shadow-sm transition cursor-pointer">
+                            <i data-lucide="sheet" class="w-3.5 h-3.5"></i>
+                            <span>دانلود Excel</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            ${downloadCardHtml}
+            <div class="msg-action-bar">
+                <button type="button" class="msg-action-btn msg-action-btn-copy copy-msg-btn" title="کپی متن کامل">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    <span>کپی</span>
+                </button>
+                <button type="button" class="msg-action-btn msg-action-btn-docx export-docx-btn" title="دریافت فایل Word (.docx)">
+                    <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                    <span>خروجی Word</span>
+                </button>
+                <button type="button" class="msg-action-btn msg-action-btn-xlsx export-xlsx-btn" title="دریافت فایل Excel (.xlsx)">
+                    <i data-lucide="sheet" class="w-3.5 h-3.5"></i>
+                    <span>خروجی Excel</span>
+                </button>
+            </div>
+        `;
+    },
+
+    async downloadExport({ format, content = null, sessionId = null, messageId = null, title = null }) {
+        const formatTitle = format === 'xlsx' ? 'Excel' : 'Word';
+        App.toast(`در حال تولید فایل ${formatTitle}...`, 'info');
+        try {
+            const payload = {
+                format: format,
+                content: content,
+                session_id: sessionId || this.currentSessionId,
+                message_id: messageId,
+                title: title || (this.sessions.find(s => s.id === this.currentSessionId)?.title || 'گزارش تحلیلی بورس کالا')
+            };
+
+            const res = await fetch('/api/chat/export', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${App.token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || 'خطا در تولید فایل خروجی');
+            }
+
+            let filename = `گزارش_بورس_کالا.${format}`;
+            const disposition = res.headers.get('Content-Disposition');
+            if (disposition) {
+                const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+                if (utf8Match) {
+                    filename = decodeURIComponent(utf8Match[1]);
+                } else {
+                    const regularMatch = disposition.match(/filename="?([^";]+)"?/i);
+                    if (regularMatch) {
+                        filename = regularMatch[1];
+                    }
+                }
+            }
+
+            const blob = await res.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(blobUrl);
+
+            App.toast(`فایل ${filename} با موفقیت دانلود شد.`, 'success');
+        } catch (e) {
+            console.error('Export download error:', e);
+            App.toast(`خطا در دانلود فایل: ${e.message}`, 'error');
+        }
+    },
+
+    getMessageRawContent(btn) {
+        if (!btn) return '';
+        const wrapper = btn.closest('.animate-fade-in');
+        if (!wrapper) return '';
+        if (wrapper.dataset.rawContent) return wrapper.dataset.rawContent;
+        const proseEl = wrapper.querySelector('.prose-custom');
+        return proseEl ? (proseEl.innerText || proseEl.textContent || '') : '';
+    },
+
+    copyMessageContent(btn) {
+        const raw = this.getMessageRawContent(btn);
+        if (!raw) return;
+        App.copyToClipboard(raw, 'متن گزارش با موفقیت کپی شد!');
+        const span = btn.querySelector('span');
+        if (span) {
+            const originalText = span.textContent;
+            span.textContent = '✓ کپی شد!';
+            setTimeout(() => {
+                span.textContent = originalText;
+            }, 2000);
+        }
+    }
     }
 };
 

@@ -2,8 +2,9 @@ import os
 import sys
 import unittest
 
-base = r"C:\Users\IME\.gemini\antigravity\scratch\ollama_chatbot"
-sys.path.insert(0, base)
+base = os.path.dirname(os.path.abspath(__file__))
+if base not in sys.path:
+    sys.path.insert(0, base)
 
 from app.database import init_db, SessionLocal, User, ChatSession, ChatMessage, PromptLog
 from app.auth import hash_password, verify_password, create_access_token, decode_access_token
