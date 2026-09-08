@@ -40,6 +40,9 @@ const App = {
             }
         }
         if (window.lucide) lucide.createIcons();
+        if (window.Chat && typeof Chat.updateAllChartsTheme === 'function') {
+            Chat.updateAllChartsTheme(isDark);
+        }
     },
 
     toast(message, type = 'info') {

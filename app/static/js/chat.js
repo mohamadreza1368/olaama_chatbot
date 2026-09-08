@@ -30,14 +30,14 @@ if (window.marked) {
                 return marked.parse(trimmedCode);
             }
 
-            // 2. ASCII Meter / Progress Bar / Health / Performance Status
-            if (window.Chat && Chat.isMeterOrChart(code, lang)) {
-                return Chat.renderOfficeMeterCard(code, safeCode);
+            // 2. Smart Interactive Chart (Chart.js: Line, Bar, Doughnut, Pie, Radar)
+            if (window.Chat && Chat.isChartBlock(code, lang)) {
+                return Chat.renderSmartChartCard(code, safeCode, lang);
             }
 
-            // 3. Key-Value Bar Chart
-            if (window.Chat && Chat.isKeyValueChart(code, lang)) {
-                return Chat.renderOfficeBarChart(code, safeCode);
+            // 3. ASCII Meter / Progress Bar / Health / Performance Status
+            if (window.Chat && Chat.isMeterOrChart(code, lang)) {
+                return Chat.renderOfficeMeterCard(code, safeCode);
             }
 
             // 4. Default Code Block with Copy Button
@@ -74,6 +74,7 @@ const Chat = {
     activeContentEl: null,
     activeBubbleWrapper: null,
     currentAccumulatedResponse: '',
+    chartInstances: {},
 
     toPersianDigits(str) {
         if (str === null || str === undefined) return '';
@@ -190,38 +191,220 @@ const Chat = {
         `;
     },
 
-    isKeyValueChart(code, lang) {
-        if (['chart', 'bar', 'graph', 'data'].includes(lang)) return true;
-        const lines = code.split('\n').map(l => l.trim()).filter(Boolean);
-        if (lines.length < 2) return false;
-        let numMatches = 0;
-        for (const line of lines) {
-            if (/^[^:\-=]+[:\-=\t]+\s*[\d,.]+%?$/.test(line)) {
-                numMatches++;
+    isChartBlock(code, lang) {
+        if (['chart', 'line', 'bar', 'doughnut', 'pie', 'radar', 'graph', 'data'].includes(lang)) return true;
+        const trimmed = (code || '').trim();
+        // Check for JSON chart spec
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (parsed.labels || parsed.data || parsed.datasets || parsed.type) return true;
+            } catch (e) {}
+        }
+        // Check for YAML/Key-Value chart spec
+        if (/^(?:type|نوع|chart):\s*(?:line|bar|doughnut|pie|radar|خطی|میله|ستونی|دونات|دایره)/im.test(trimmed)) {
+            return true;
+        }
+        // Check for multi-line key-value numbers
+        const lines = trimmed.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length >= 2) {
+            let numMatches = 0;
+            for (const line of lines) {
+                if (/^[^:\-=]+[:\-=\t]+\s*[\d,.]+%?$/.test(line)) {
+                    numMatches++;
+                }
+            }
+            if (numMatches >= 2 && (numMatches / lines.length) >= 0.7) {
+                return true;
             }
         }
-        return numMatches >= 2 && (numMatches / lines.length) >= 0.7;
+        return false;
     },
 
-    renderOfficeBarChart(rawCode, safeCode) {
-        const lines = rawCode.split('\n').map(l => l.trim()).filter(Boolean);
-        const items = [];
-        let maxVal = 0;
+    parseChartData(rawCode, lang) {
+        const trimmed = (rawCode || '').trim();
+        let chartType = ['line', 'bar', 'doughnut', 'pie', 'radar'].includes(lang) ? lang : null;
+        let title = '';
+        let unit = '';
+        let labels = [];
+        let data = [];
+        let datasets = null;
 
-        for (const line of lines) {
-            const match = line.match(/^([^:\-=]+)[:\-=\t]+\s*([\d,.]+)(%?)$/);
-            if (match) {
-                const label = match[1].replace(/^[\*\-#\d.]+\s*/, '').trim();
-                const rawNum = parseFloat(match[2].replace(/,/g, ''));
-                const isPercent = match[3] === '%' || rawNum <= 100;
-                if (!isNaN(rawNum)) {
-                    if (rawNum > maxVal) maxVal = rawNum;
-                    items.push({ label, val: rawNum, isPercent });
+        // Attempt 1: JSON Parsing
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+                const obj = JSON.parse(trimmed);
+                if (obj.type) chartType = obj.type.toLowerCase();
+                if (obj.title) title = obj.title;
+                if (obj.unit) unit = obj.unit;
+                if (Array.isArray(obj.labels)) labels = obj.labels.map(l => String(l).trim());
+                if (Array.isArray(obj.data)) {
+                    data = obj.data.map(v => typeof v === 'number' ? v : parseFloat(String(v).replace(/[,%]/g, ''))).filter(v => !isNaN(v));
+                }
+                if (Array.isArray(obj.datasets)) {
+                    datasets = obj.datasets;
+                }
+            } catch (e) {}
+        }
+
+        // Attempt 2: Line-by-line parsing (Key: Value or YAML syntax)
+        if (labels.length === 0 && (!datasets || datasets.length === 0)) {
+            const lines = trimmed.split('\n').map(l => l.trim()).filter(Boolean);
+            for (const line of lines) {
+                const metaMatch = line.match(/^(type|نوع|title|عنوان|unit|واحد)[:\-=\t]+\s*(.+)$/i);
+                if (metaMatch) {
+                    const k = metaMatch[1].toLowerCase();
+                    const v = metaMatch[2].trim();
+                    if (k === 'type' || k === 'نوع') {
+                        const t = v.toLowerCase();
+                        if (t.includes('line') || t.includes('خط')) chartType = 'line';
+                        else if (t.includes('bar') || t.includes('ستونی') || t.includes('میله')) chartType = 'bar';
+                        else if (t.includes('doughnut') || t.includes('دونات')) chartType = 'doughnut';
+                        else if (t.includes('pie') || t.includes('دایره')) chartType = 'pie';
+                        else if (t.includes('radar') || t.includes('رادار')) chartType = 'radar';
+                    } else if (k === 'title' || k === 'عنوان') {
+                        title = v.replace(/^["']|["']$/g, '');
+                    } else if (k === 'unit' || k === 'واحد') {
+                        unit = v.replace(/^["']|["']$/g, '');
+                    }
+                    continue;
+                }
+
+                const labelsMatch = line.match(/^(?:labels|برچسب‌ها)[:\-=\t]+\s*\[?([^\]]+)\]?$/i);
+                if (labelsMatch) {
+                    labels = labelsMatch[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+                    continue;
+                }
+                const dataMatch = line.match(/^(?:data|داده‌ها|مقادیر)[:\-=\t]+\s*\[?([^\]]+)\]?$/i);
+                if (dataMatch) {
+                    data = dataMatch[1].split(',').map(s => parseFloat(s.trim().replace(/[,%]/g, ''))).filter(v => !isNaN(v));
+                    continue;
+                }
+
+                const itemMatch = line.match(/^([^:\-=]+)[:\-=\t]+\s*([\d,.]+)(%?)$/);
+                if (itemMatch) {
+                    const lbl = itemMatch[1].replace(/^[\*\-#\d.]+\s*/, '').trim();
+                    const val = parseFloat(itemMatch[2].replace(/,/g, ''));
+                    if (!isNaN(val)) {
+                        labels.push(lbl);
+                        data.push(val);
+                        if (itemMatch[3] === '%' && !unit) unit = 'درصد';
+                    }
                 }
             }
         }
 
-        if (items.length === 0) {
+        if (!datasets && data.length > 0) {
+            datasets = [{
+                label: title || 'شاخص عملکرد',
+                data: data
+            }];
+        }
+
+        return { chartType, title, unit, labels, datasets };
+    },
+
+    analyzeDataAndDetermineChart(parsed) {
+        const labels = parsed.labels || [];
+        const datasets = parsed.datasets || [];
+        const dataVals = (datasets[0] && datasets[0].data) ? datasets[0].data : [];
+        const count = dataVals.length;
+
+        if (count === 0) {
+            return {
+                recommendedType: 'bar',
+                activeType: 'bar',
+                badgeText: '📊 تحلیل داده‌ها',
+                badgeIcon: 'bar-chart-3',
+                insightText: 'داده‌های آماری دریافت شد.',
+                stats: { total: 0, avg: 0, max: 0, min: 0 }
+            };
+        }
+
+        const total = dataVals.reduce((acc, v) => acc + (typeof v === 'number' ? v : 0), 0);
+        const avg = parseFloat((total / count).toFixed(1));
+        const max = Math.max(...dataVals);
+        const min = Math.min(...dataVals);
+        const maxIndex = dataVals.indexOf(max);
+        const minIndex = dataVals.indexOf(min);
+        const maxLabel = labels[maxIndex] || 'حداکثر';
+        const minLabel = labels[minIndex] || 'حداقل';
+
+        // 1. Check for Temporal / Time Series indicators
+        const temporalTerms = [
+            'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
+            'شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'سه شنبه', 'چهارشنبه', 'پنج‌شنبه', 'پنجشنبه', 'جمعه',
+            'هفته', 'ماه', 'سال', 'دوره', 'فصل', 'بهار', 'تابستان', 'پاییز', 'زمستان',
+            'q1', 'q2', 'q3', 'q4', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+        ];
+        const yearOrDateRegex = /(?:13\d\d|14\d\d|20\d\d|\d{2,4}[/-]\d{1,2})/;
+        
+        let temporalScore = 0;
+        labels.forEach(lbl => {
+            const lower = lbl.toLowerCase();
+            if (temporalTerms.some(t => lower.includes(t)) || yearOrDateRegex.test(lbl)) {
+                temporalScore++;
+            }
+        });
+        const isTemporal = (temporalScore / count) >= 0.4 || temporalScore >= 2;
+
+        // 2. Check for Share / Composition indicators
+        const titleAndLabelsStr = (parsed.title + ' ' + labels.join(' ')).toLowerCase();
+        const shareTerms = ['سهم', 'درصد', 'ترکیب', 'توزیع', 'بودجه', 'سبد', 'تفکیک', 'مشارکت', 'نسبت'];
+        const hasShareTerms = shareTerms.some(t => titleAndLabelsStr.includes(t));
+        const isSumNear100 = (total >= 95 && total <= 105) || (parsed.unit === 'درصد');
+        const isComposition = (isSumNear100 || hasShareTerms) && count >= 2 && count <= 8;
+
+        // 3. Multi-criteria / Radar check
+        const isRadarExplicit = parsed.chartType === 'radar';
+
+        // 4. Determine Recommended Type & Insight
+        let recommendedType = 'bar';
+        let badgeText = '📊 مقایسه دسته‌ها و عملکرد';
+        let badgeIcon = 'bar-chart-3';
+        let insightText = '';
+
+        if (isRadarExplicit) {
+            recommendedType = 'radar';
+            badgeText = '🎯 ارزیابی چندبعدی عملکرد';
+            badgeIcon = 'target';
+            insightText = `ارزیابی ${this.toPersianDigits(count)} شاخص عملکردی نشان‌دهنده برتری شاخص «${maxLabel}» است.`;
+        } else if (isTemporal) {
+            recommendedType = 'line';
+            badgeText = '📈 تحلیل سری زمانی و روند';
+            badgeIcon = 'trending-up';
+            insightText = `روند زمانی داده‌ها حاکی از اوج در «${maxLabel}» (${this.toPersianDigits(max)}) و کمترین مقدار در «${minLabel}» (${this.toPersianDigits(min)}) است.`;
+        } else if (isComposition) {
+            recommendedType = 'doughnut';
+            badgeText = '🍩 تحلیل ترکیب و سهم از کل';
+            badgeIcon = 'pie-chart';
+            const sharePct = total > 0 ? ((max / total) * 100).toFixed(1) : 0;
+            insightText = `بخش «${maxLabel}» با سهم ${this.toPersianDigits(sharePct)}٪ (${this.toPersianDigits(max)}) بیشترین سهم را داراست.`;
+        } else {
+            recommendedType = 'bar';
+            badgeText = '📊 مقایسه مقادیر و شاخص‌ها';
+            badgeIcon = 'bar-chart-3';
+            insightText = `مقایسه بین ${this.toPersianDigits(count)} شاخص نشان می‌دهد «${maxLabel}» بالاترین مقدار (${this.toPersianDigits(max)}) را ثبت کرده است.`;
+        }
+
+        let activeType = parsed.chartType;
+        if (!activeType || !['line', 'bar', 'doughnut', 'pie', 'radar'].includes(activeType)) {
+            activeType = recommendedType;
+        }
+
+        return {
+            recommendedType,
+            activeType,
+            badgeText,
+            badgeIcon,
+            insightText,
+            stats: { total, avg, max, min }
+        };
+    },
+
+    renderSmartChartCard(rawCode, safeCode, lang) {
+        const parsed = this.parseChartData(rawCode, lang);
+        if (!parsed.labels.length && (!parsed.datasets || !parsed.datasets.length)) {
             return `
                 <div class="code-block-wrapper my-3 rounded-xl overflow-hidden border border-gray-700/60 bg-[#161616] shadow-lg text-left" dir="ltr">
                     <pre class="p-3.5 m-0 bg-[#161616] overflow-x-auto text-[13px] font-mono leading-relaxed"><code>${safeCode}</code></pre>
@@ -229,56 +412,404 @@ const Chat = {
             `;
         }
 
-        if (maxVal === 0) maxVal = 100;
+        const analysis = this.analyzeDataAndDetermineChart(parsed);
+        const cardId = 'smartchart-' + Math.random().toString(36).substring(2, 9);
+        const title = parsed.title || 'نمودار تحلیلی شاخص‌ها';
+        const unit = parsed.unit || '';
+        const activeType = analysis.activeType;
 
-        const colors = [
-            'from-emerald-500 to-teal-400',
-            'from-cyan-500 to-blue-400',
-            'from-indigo-500 to-sky-400',
-            'from-amber-500 to-yellow-400',
-            'from-violet-500 to-purple-400'
-        ];
+        const configPayload = {
+            cardId,
+            title,
+            unit,
+            labels: parsed.labels,
+            datasets: parsed.datasets,
+            activeType,
+            recommendedType: analysis.recommendedType,
+            stats: analysis.stats
+        };
 
-        const barsHtml = items.map((it, idx) => {
-            const pct = Math.min(100, Math.round((it.val / maxVal) * 100));
-            const col = colors[idx % colors.length];
-            const displayVal = it.isPercent ? `${this.toPersianDigits(it.val)}٪` : this.toPersianDigits(it.val);
+        const encodedConfig = encodeURIComponent(JSON.stringify(configPayload));
+
+        // Generate Collapsible Data Table HTML
+        const tableRowsHtml = parsed.labels.map((lbl, idx) => {
+            const val = parsed.datasets[0] ? parsed.datasets[0].data[idx] : '-';
+            const formattedVal = typeof val === 'number' ? this.toPersianDigits(val) : val;
             return `
-                <div class="space-y-1 my-2">
-                    <div class="flex items-center justify-between text-xs font-semibold text-gray-700 dark:text-gray-200">
-                        <span class="truncate max-w-[70%]">${it.label}</span>
-                        <span class="font-mono text-emerald-600 dark:text-emerald-400">${displayVal}</span>
-                    </div>
-                    <div class="w-full bg-gray-200 dark:bg-gray-700/60 rounded-full h-2.5 overflow-hidden p-0.5">
-                        <div class="h-full rounded-full bg-gradient-to-r ${col} transition-all duration-700" style="width: ${pct}%"></div>
-                    </div>
-                </div>
+                <tr class="border-b border-gray-200/50 dark:border-gray-700/40 hover:bg-gray-100/50 dark:hover:bg-white/5 transition">
+                    <td class="py-1.5 px-3 font-medium text-gray-700 dark:text-gray-300 text-right">${lbl}</td>
+                    <td class="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400 text-left" dir="ltr">${formattedVal} ${unit}</td>
+                </tr>
             `;
         }).join('');
 
-        const cardId = 'barchart-' + Math.random().toString(36).substring(2, 9);
-
         return `
-            <div class="office-meter-card my-3 select-none" id="${cardId}">
-                <div class="flex items-center justify-between gap-3 mb-3 border-b border-gray-200/60 dark:border-gray-700/50 pb-2">
-                    <div class="flex items-center gap-2 font-bold text-sm text-gray-800 dark:text-gray-100">
-                        <span class="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                            <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+            <div class="smart-chart-container my-4 rounded-2xl border border-gray-200 dark:border-gray-700/70 bg-white dark:bg-[#1a1a1a] shadow-lg overflow-hidden transition-all select-none" id="${cardId}" data-chart-config="${encodedConfig}">
+                <!-- Header: Title, Analysis Badge, Controls -->
+                <div class="chart-card-header flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-gray-50/90 dark:bg-[#232323] border-b border-gray-200 dark:border-gray-700/60">
+                    <div class="flex items-center gap-3">
+                        <span class="p-2 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                            <i data-lucide="${analysis.badgeIcon}" class="w-4 h-4"></i>
                         </span>
-                        <span>نمودار تحلیلی شاخص‌ها</span>
+                        <div>
+                            <h4 class="font-bold text-sm text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                                <span>${title}</span>
+                            </h4>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                    ${analysis.badgeText}
+                                </span>
+                                ${unit ? `<span class="text-[11px] text-gray-400">واحد: <strong>${unit}</strong></span>` : ''}
+                            </div>
+                        </div>
                     </div>
-                    <button type="button" class="text-[11px] text-gray-400 hover:text-gray-200 px-1.5 py-0.5 rounded hover:bg-white/10 transition cursor-pointer" onclick="Chat.toggleVisualCode('${cardId}')" title="تغییر نمایش متنی / گرافیکی">
-                        📋
-                    </button>
+
+                    <!-- Toolbar Buttons: Type Switcher, Download PNG, View Table -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <!-- Dynamic Type Switcher -->
+                        <div class="inline-flex rounded-xl bg-gray-200/80 dark:bg-[#141414] p-1 gap-1 text-xs" role="group">
+                            <button type="button" class="chart-type-btn px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${activeType === 'bar' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10'}" data-type="bar" onclick="Chat.switchChartType('${cardId}', 'bar')" title="نمودار میله‌ای/ستونی (مقایسه دسته‌ها)">
+                                ستونی
+                            </button>
+                            <button type="button" class="chart-type-btn px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${activeType === 'line' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10'}" data-type="line" onclick="Chat.switchChartType('${cardId}', 'line')" title="نمودار خطی (روند زمانی)">
+                                خطی
+                            </button>
+                            <button type="button" class="chart-type-btn px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${activeType === 'doughnut' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10'}" data-type="doughnut" onclick="Chat.switchChartType('${cardId}', 'doughnut')" title="نمودار دونات (سهم و ترکیب)">
+                                دونات
+                            </button>
+                            <button type="button" class="chart-type-btn px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${activeType === 'pie' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10'}" data-type="pie" onclick="Chat.switchChartType('${cardId}', 'pie')" title="نمودار دایره‌ای">
+                                دایره
+                            </button>
+                        </div>
+
+                        <!-- Download PNG -->
+                        <button type="button" class="p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-gray-600 hover:text-emerald-500 dark:text-gray-300 dark:hover:text-emerald-400 hover:border-emerald-500/40 transition cursor-pointer shadow-sm" onclick="Chat.downloadChartImage('${cardId}')" title="دانلود تصویر با کیفیت بالا (PNG)">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                        </button>
+
+                        <!-- Toggle Data Table -->
+                        <button type="button" class="p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-gray-600 hover:text-blue-500 dark:text-gray-300 dark:hover:text-blue-400 hover:border-blue-500/40 transition cursor-pointer shadow-sm" onclick="Chat.toggleChartDataTable('${cardId}')" title="مشاهده جدول داده‌های خام">
+                            <i data-lucide="table" class="w-4 h-4"></i>
+                        </button>
+                    </div>
                 </div>
-                <div class="space-y-1">
-                    ${barsHtml}
+
+                <!-- Initial Analysis Insight Banner -->
+                <div class="px-4 py-2.5 bg-emerald-500/5 dark:bg-emerald-500/10 border-b border-emerald-500/15 text-xs text-gray-700 dark:text-gray-200 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-emerald-500 flex-shrink-0">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                        </span>
+                        <span class="font-medium leading-relaxed">${analysis.insightText}</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-[11px] font-mono text-gray-500 dark:text-gray-400 mr-auto">
+                        <span>مجموع: <strong class="text-gray-800 dark:text-gray-200">${this.toPersianDigits(analysis.stats.total)}</strong></span>
+                        <span>میانگین: <strong class="text-gray-800 dark:text-gray-200">${this.toPersianDigits(analysis.stats.avg)}</strong></span>
+                        <span>بیشترین: <strong class="text-emerald-600 dark:text-emerald-400">${this.toPersianDigits(analysis.stats.max)}</strong></span>
+                    </div>
                 </div>
-                <div class="raw-code-view hidden mt-3 pt-2 border-t border-gray-700/60 text-left font-mono text-xs text-gray-300" dir="ltr">
-                    <pre class="p-2 bg-black/40 rounded-lg overflow-x-auto">${safeCode}</pre>
+
+                <!-- Chart.js Canvas Area -->
+                <div class="p-4 relative w-full h-[270px] md:h-[310px] flex items-center justify-center">
+                    <canvas id="canvas-${cardId}" class="w-full h-full"></canvas>
+                </div>
+
+                <!-- Collapsible Raw Data Table -->
+                <div id="table-${cardId}" class="hidden border-t border-gray-200 dark:border-gray-700/60 p-3 bg-gray-50/50 dark:bg-black/20 text-xs">
+                    <div class="font-bold mb-2 text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                        <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>جدول داده‌های آماری نمودار:</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs text-right border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 dark:bg-white/5 border-b border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400">
+                                    <th class="py-1.5 px-3">عنوان / برچسب</th>
+                                    <th class="py-1.5 px-3 text-left">مقدار</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         `;
+    },
+
+    initSmartChart(cardId) {
+        const card = document.getElementById(cardId);
+        if (!card) return;
+        const canvas = document.getElementById('canvas-' + cardId);
+        if (!canvas) return;
+
+        if (card.dataset.chartInitialized === 'true' && this.chartInstances[cardId]) {
+            return;
+        }
+
+        if (typeof window.Chart === 'undefined') {
+            return;
+        }
+
+        let configData = null;
+        try {
+            configData = JSON.parse(decodeURIComponent(card.dataset.chartConfig));
+        } catch (e) {
+            console.error('Failed to parse chart config:', e);
+            return;
+        }
+
+        const isDark = document.documentElement.classList.contains('dark');
+        const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+        const textColor = isDark ? '#9ca3af' : '#4b5563';
+        const activeType = configData.activeType || 'bar';
+
+        const palette = [
+            '#10b981', // emerald
+            '#06b6d4', // cyan
+            '#3b82f6', // blue
+            '#6366f1', // indigo
+            '#f59e0b', // amber
+            '#f43f5e', // rose
+            '#8b5cf6', // violet
+            '#14b8a6'  // teal
+        ];
+
+        const labels = configData.labels || [];
+        const rawDatasets = configData.datasets || [];
+        const unit = configData.unit || '';
+
+        if (this.chartInstances[cardId]) {
+            try { this.chartInstances[cardId].destroy(); } catch (e) {}
+            delete this.chartInstances[cardId];
+        }
+
+        const chartDatasets = rawDatasets.map((ds, idx) => {
+            const label = ds.label || configData.title || 'شاخص';
+            const data = ds.data || [];
+
+            if (activeType === 'line') {
+                const baseCol = palette[idx % palette.length];
+                return {
+                    label: label,
+                    data: data,
+                    borderColor: baseCol,
+                    backgroundColor: idx === 0 ? 'rgba(16, 185, 129, 0.18)' : 'rgba(6, 182, 212, 0.18)',
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.35,
+                    pointBackgroundColor: baseCol,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4.5,
+                    pointHoverRadius: 7
+                };
+            } else if (activeType === 'doughnut' || activeType === 'pie') {
+                const sliceColors = data.map((_, i) => palette[i % palette.length]);
+                return {
+                    label: label,
+                    data: data,
+                    backgroundColor: sliceColors,
+                    borderColor: isDark ? '#1a1a1a' : '#ffffff',
+                    borderWidth: 2,
+                    hoverOffset: 8
+                };
+            } else if (activeType === 'radar') {
+                const baseCol = palette[idx % palette.length];
+                return {
+                    label: label,
+                    data: data,
+                    borderColor: baseCol,
+                    backgroundColor: 'rgba(16, 185, 129, 0.25)',
+                    borderWidth: 2,
+                    pointBackgroundColor: baseCol,
+                    pointBorderColor: '#fff',
+                    pointRadius: 4
+                };
+            } else {
+                const isSingleDataset = rawDatasets.length === 1;
+                const barColors = isSingleDataset 
+                    ? data.map((_, i) => palette[i % palette.length]) 
+                    : palette[idx % palette.length];
+
+                return {
+                    label: label,
+                    data: data,
+                    backgroundColor: barColors,
+                    borderRadius: 8,
+                    borderSkipped: false,
+                    maxBarThickness: 42
+                };
+            }
+        });
+
+        const isCircular = (activeType === 'doughnut' || activeType === 'pie' || activeType === 'radar');
+        const scalesConfig = isCircular ? {} : {
+            x: {
+                grid: { color: gridColor, drawBorder: false },
+                ticks: {
+                    color: textColor,
+                    font: { family: 'Vazirmatn, system-ui, sans-serif', size: 11 }
+                }
+            },
+            y: {
+                grid: { color: gridColor, drawBorder: false },
+                ticks: {
+                    color: textColor,
+                    font: { family: 'Vazirmatn, system-ui, sans-serif', size: 11 },
+                    callback: (value) => this.toPersianDigits(value) + (unit ? ' ' + unit : '')
+                }
+            }
+        };
+
+        const ctx = canvas.getContext('2d');
+        const chartInstance = new Chart(ctx, {
+            type: activeType,
+            data: {
+                labels: labels,
+                datasets: chartDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 550, easing: 'easeOutQuart' },
+                plugins: {
+                    legend: {
+                        display: (activeType === 'doughnut' || activeType === 'pie' || rawDatasets.length > 1),
+                        position: 'top',
+                        rtl: true,
+                        textDirection: 'rtl',
+                        labels: {
+                            color: textColor,
+                            font: { family: 'Vazirmatn, system-ui, sans-serif', size: 12 },
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            padding: 12
+                        }
+                    },
+                    tooltip: {
+                        rtl: true,
+                        textDirection: 'rtl',
+                        backgroundColor: isDark ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                        titleColor: isDark ? '#f3f4f6' : '#111827',
+                        bodyColor: isDark ? '#e5e7eb' : '#374151',
+                        borderColor: isDark ? 'rgba(75, 85, 99, 0.4)' : 'rgba(209, 213, 219, 0.8)',
+                        borderWidth: 1,
+                        padding: 10,
+                        boxPadding: 4,
+                        usePointStyle: true,
+                        titleFont: { family: 'Vazirmatn, system-ui, sans-serif', size: 12, weight: 'bold' },
+                        bodyFont: { family: 'Vazirmatn, system-ui, sans-serif', size: 12 },
+                        callbacks: {
+                            label: (context) => {
+                                const val = context.raw;
+                                const displayVal = typeof val === 'number' ? this.toPersianDigits(val) : val;
+                                const dsLabel = context.dataset.label ? context.dataset.label + ': ' : '';
+                                return `${dsLabel}${displayVal} ${unit}`;
+                            }
+                        }
+                    }
+                },
+                scales: scalesConfig
+            }
+        });
+
+        this.chartInstances[cardId] = chartInstance;
+        card.dataset.chartInitialized = 'true';
+    },
+
+    switchChartType(cardId, newType) {
+        const card = document.getElementById(cardId);
+        if (!card) return;
+
+        let configData = null;
+        try {
+            configData = JSON.parse(decodeURIComponent(card.dataset.chartConfig));
+        } catch (e) {
+            return;
+        }
+
+        configData.activeType = newType;
+        card.dataset.chartConfig = encodeURIComponent(JSON.stringify(configData));
+        card.dataset.chartInitialized = 'false';
+
+        card.querySelectorAll('.chart-type-btn').forEach(btn => {
+            const btnType = btn.getAttribute('data-type');
+            if (btnType === newType) {
+                btn.className = 'chart-type-btn px-2.5 py-1 rounded-lg font-medium transition cursor-pointer bg-emerald-600 text-white shadow-sm';
+            } else {
+                btn.className = 'chart-type-btn px-2.5 py-1 rounded-lg font-medium transition cursor-pointer text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10';
+            }
+        });
+
+        this.initSmartChart(cardId);
+    },
+
+    downloadChartImage(cardId) {
+        const chart = this.chartInstances[cardId];
+        const card = document.getElementById(cardId);
+        if (!chart || !card) {
+            App.toast('نمودار هنوز بارگذاری نشده است', 'warning');
+            return;
+        }
+
+        let configData = {};
+        try {
+            configData = JSON.parse(decodeURIComponent(card.dataset.chartConfig));
+        } catch (e) {}
+
+        const title = configData.title || 'chart';
+        const isDark = document.documentElement.classList.contains('dark');
+        const canvas = chart.canvas;
+
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = canvas.width;
+        exportCanvas.height = canvas.height;
+        const ctx = exportCanvas.getContext('2d');
+
+        ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
+        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        ctx.drawImage(canvas, 0, 0);
+
+        const dataUrl = exportCanvas.toDataURL('image/png', 1.0);
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `${title.replace(/[\/\\:*?"<>|]/g, '_')}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        App.toast('تصویر باکیفیت نمودار دانلود شد', 'success');
+    },
+
+    toggleChartDataTable(cardId) {
+        const tableDiv = document.getElementById('table-' + cardId);
+        if (tableDiv) {
+            tableDiv.classList.toggle('hidden');
+        }
+    },
+
+    initAllCharts(container, force = false) {
+        const root = container || document;
+        const chartCards = root.querySelectorAll('.smart-chart-container');
+        chartCards.forEach(card => {
+            if (force) {
+                card.dataset.chartInitialized = 'false';
+            }
+            this.initSmartChart(card.id);
+        });
+        if (window.lucide) lucide.createIcons();
+    },
+
+    updateAllChartsTheme(isDark) {
+        Object.keys(this.chartInstances).forEach(cardId => {
+            const card = document.getElementById(cardId);
+            if (card) {
+                card.dataset.chartInitialized = 'false';
+                this.initSmartChart(cardId);
+            }
+        });
     },
 
     toggleVisualCode(cardId) {
@@ -314,6 +845,7 @@ const Chat = {
 
     enhanceTablesAndMeters(container) {
         if (!container) return;
+        this.initAllCharts(container);
         const tables = container.querySelectorAll('table');
         tables.forEach(table => {
             if (table.dataset.enhanced) return;

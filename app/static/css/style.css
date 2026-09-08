@@ -242,6 +242,26 @@ button {
 }
 
 /* ============================================================
+   SMART INTERACTIVE CHARTS & VISUAL DASHBOARD (Chart.js)
+   ============================================================ */
+.smart-chart-container {
+    direction: rtl;
+    text-align: right;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.07);
+    transition: all 0.25s ease;
+}
+.dark .smart-chart-container {
+    box-shadow: 0 6px 25px -2px rgba(0, 0, 0, 0.45);
+}
+.smart-chart-container:hover {
+    box-shadow: 0 8px 30px -4px rgba(16, 185, 129, 0.12);
+}
+.chart-type-btn {
+    user-select: none;
+    outline: none;
+}
+
+/* ============================================================
    OFFICE DASHBOARD, METERS & VISUAL CHARTS (طراحی اداری نمودارها)
    ============================================================ */
 .office-meter-card {
