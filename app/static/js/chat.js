@@ -910,6 +910,13 @@ const Chat = {
             actualReasoning = parsed.thinking;
             actualContent = parsed.result;
             activeThinking = parsed.isThinkingActive || (isStreaming && !actualContent && Boolean(actualReasoning));
+        } else if (!actualReasoning && actualContent && actualContent.includes('<think>')) {
+            const parsed = this.splitThinkingAndResult(actualContent);
+            actualReasoning = parsed.thinking;
+            actualContent = parsed.result;
+            if (parsed.isThinkingActive) {
+                activeThinking = true;
+            }
         }
 
         let thinkingHtml = '';
@@ -2046,13 +2053,57 @@ const Chat = {
         let lastRenderTs = 0;
         let pendingIsThinking = false;
 
+        const renderStreamUpdate = (thinkingMode) => {
+            let currentReasoning = accumulatedReasoning;
+            let currentResult = accumulatedContent;
+            let isThinkingPhase = thinkingMode;
+
+            // Handle models that send <think> tags in the content/token stream
+            if (!currentReasoning && currentResult && currentResult.includes('<think>')) {
+                const parsed = this.splitThinkingAndResult(currentResult);
+                currentReasoning = parsed.thinking;
+                currentResult = parsed.result;
+                if (parsed.isThinkingActive) {
+                    isThinkingPhase = true;
+                }
+            }
+
+            const activeThinkingBody = contentEl.querySelector('.thinking-block-active .thinking-body');
+
+            // Optimized update path during active thinking:
+            // Updates text directly without destroying the DOM elements on every chunk
+            if (isThinkingPhase && activeThinkingBody && !currentResult) {
+                const distanceToBottom = activeThinkingBody.scrollHeight - activeThinkingBody.scrollTop - activeThinkingBody.clientHeight;
+                const isNearBottom = distanceToBottom < 60;
+
+                activeThinkingBody.textContent = currentReasoning;
+
+                // By default keep pinned to the bottom so the latest thinking tokens are visible
+                if (isNearBottom) {
+                    activeThinkingBody.scrollTop = activeThinkingBody.scrollHeight;
+                }
+                this.scrollToBottom();
+                return;
+            }
+
+            // Full render path (initial thinking mount, transition to final answer, or force render)
+            contentEl.innerHTML = this.renderAssistantMessage(currentReasoning, currentResult, isThinkingPhase);
+            if (window.lucide) lucide.createIcons();
+
+            // When an active thinking block is mounted, ensure its scroll position starts at the bottom
+            const newThinkingBody = contentEl.querySelector('.thinking-block-active .thinking-body');
+            if (newThinkingBody) {
+                newThinkingBody.scrollTop = newThinkingBody.scrollHeight;
+            }
+            this.scrollToBottom();
+        };
+
         const scheduleStreamRender = (isThinking = false, force = false) => {
             pendingIsThinking = isThinking;
             const now = performance.now();
             if (force) {
                 renderFramePending = false;
-                contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, isThinking);
-                this.scrollToBottom();
+                renderStreamUpdate(isThinking);
                 return;
             }
             if (renderFramePending) return;
@@ -2061,14 +2112,12 @@ const Chat = {
                 requestAnimationFrame(() => {
                     renderFramePending = false;
                     lastRenderTs = performance.now();
-                    contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, pendingIsThinking);
-                    this.scrollToBottom();
+                    renderStreamUpdate(pendingIsThinking);
                 });
                 return;
             }
             lastRenderTs = now;
-            contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, isThinking);
-            this.scrollToBottom();
+            renderStreamUpdate(isThinking);
         };
 
         try {
