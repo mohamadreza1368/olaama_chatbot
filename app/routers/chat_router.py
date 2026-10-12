@@ -373,9 +373,12 @@ async def send_message(
                     break
 
             # 6. Stream Chat with LLM Service
+            chunk_count = 0
             async for chunk_str in ollama_service.stream_chat(context_messages, model=active_model):
-                if await request.is_disconnected():
-                    break
+                chunk_count += 1
+                if chunk_count % 25 == 0:
+                    if await request.is_disconnected():
+                        break
 
                 chunk_data = json.loads(chunk_str)
                 if "error" in chunk_data:

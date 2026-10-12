@@ -236,10 +236,10 @@ class LLMService:
             "messages": messages,
             "stream": True,
             "temperature": 0.7,
-            "max_tokens": getattr(settings, "MAX_OUTPUT_TOKENS", 8192)
+            "max_tokens": getattr(settings, "MAX_OUTPUT_TOKENS", 16384)
         }
         headers = self._get_vllm_headers()
-        timeout = httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=30.0)
+        timeout = httpx.Timeout(connect=60.0, read=900.0, write=120.0, pool=60.0)
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:

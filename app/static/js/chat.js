@@ -1061,6 +1061,7 @@ const Chat = {
         this.loadSkillsForSlash();
         this.setupEvents();
         this.setupAutoDirection();
+        this.initQuestionsNav();
     },
 
     async loadSkillsForSlash() {
@@ -1628,6 +1629,7 @@ const Chat = {
                 const newSess = await res.json();
                 this.sessions.unshift({ ...newSess, message_count: 0 });
                 this.switchSession(newSess.id);
+                this.updateQuestionsNav();
             }
         } catch (e) {
             App.toast('خطا در ایجاد گفتگوی جدید', 'error');
@@ -1663,6 +1665,7 @@ const Chat = {
                 } else {
                     if (welcomeScreen) welcomeScreen.classList.remove('hidden');
                 }
+                this.updateQuestionsNav();
             }
         } catch (e) {
             console.error('Error switching session:', e);
@@ -1732,16 +1735,18 @@ const Chat = {
         const dirAttr = rtl ? 'rtl' : 'ltr';
 
         const msgDiv = document.createElement('div');
-        msgDiv.className = `flex gap-3 animate-fade-in ${isUser ? 'justify-end' : 'justify-start'}`;
+        msgDiv.className = `flex gap-3 animate-fade-in ${isUser ? 'justify-end user-message-node' : 'justify-start'}`;
 
         let renderedContent = '';
         if (isUser) {
+            msgDiv.id = 'user-msg-' + Math.random().toString(36).substring(2, 9);
+            msgDiv.dataset.role = 'user';
             let attachBadge = '';
             if (hasAttachment && attachmentName) {
                 attachBadge = `<div class="text-[11px] mb-1.5 flex items-center gap-1 text-emerald-400 font-mono"><i data-lucide="file-text" class="w-3 h-3"></i><span>${attachmentName}</span></div>`;
             }
             renderedContent = `
-                <div class="max-w-[85%] md:max-w-[75%] rounded-2xl p-3.5 bg-gray-200 dark:bg-[#2f2f2f] text-gray-900 dark:text-gray-100 text-sm shadow-sm" dir="${dirAttr}">
+                <div class="user-msg-bubble max-w-[85%] md:max-w-[75%] rounded-2xl p-3.5 bg-gray-200 dark:bg-[#2f2f2f] text-gray-900 dark:text-gray-100 text-sm shadow-sm transition-all" dir="${dirAttr}">
                     ${attachBadge}
                     <div class="whitespace-pre-wrap">${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
                 </div>
@@ -1774,6 +1779,11 @@ const Chat = {
 
         this.highlightCode(msgDiv);
         this.enhanceTablesAndMeters(msgDiv);
+
+        if (isUser) {
+            this.updateQuestionsNav();
+        }
+
         return msgDiv;
     },
 
@@ -2014,6 +2024,35 @@ const Chat = {
         let accumulatedContent = '';
         let receivedExportIntent = null;
 
+        let renderFramePending = false;
+        let lastRenderTs = 0;
+        let pendingIsThinking = false;
+
+        const scheduleStreamRender = (isThinking = false, force = false) => {
+            pendingIsThinking = isThinking;
+            const now = performance.now();
+            if (force) {
+                renderFramePending = false;
+                contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, isThinking);
+                this.scrollToBottom();
+                return;
+            }
+            if (renderFramePending) return;
+            if (now - lastRenderTs < 35) {
+                renderFramePending = true;
+                requestAnimationFrame(() => {
+                    renderFramePending = false;
+                    lastRenderTs = performance.now();
+                    contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, pendingIsThinking);
+                    this.scrollToBottom();
+                });
+                return;
+            }
+            lastRenderTs = now;
+            contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, isThinking);
+            this.scrollToBottom();
+        };
+
         try {
             const response = await fetch('/api/chat/send', {
                 method: 'POST',
@@ -2133,18 +2172,14 @@ const Chat = {
                             if (parsed.reasoning) {
                                 accumulatedReasoning += parsed.reasoning;
                                 this.currentAccumulatedReasoning = accumulatedReasoning;
-                                contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, true);
-                                this.scrollToBottom();
+                                scheduleStreamRender(true);
                             }
 
                             // 7. Handle Token Stream
                             if (parsed.token) {
                                 accumulatedContent += parsed.token;
                                 this.currentAccumulatedContent = accumulatedContent;
-                                contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, false);
-                                this.highlightCode(contentEl);
-                                this.enhanceTablesAndMeters(contentEl);
-                                this.scrollToBottom();
+                                scheduleStreamRender(false);
                             }
                         } catch (e) {
                             console.error('SSE parse error:', e);
@@ -2152,6 +2187,8 @@ const Chat = {
                     }
                 }
             }
+
+            renderFramePending = false;
 
             if ((accumulatedContent.trim() || accumulatedReasoning.trim()) && !asstBubbleWrapper.dataset.rawContent) {
                 contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, false);
@@ -2171,9 +2208,11 @@ const Chat = {
 
                 this.highlightCode(contentEl);
                 this.enhanceTablesAndMeters(contentEl);
+                if (window.lucide) lucide.createIcons();
             }
 
         } catch (err) {
+            renderFramePending = false;
             this.hideQueuePopup(true);
             if (err.name === 'AbortError' || !this.isStreaming) {
                 if ((accumulatedContent.trim() || accumulatedReasoning.trim()) && !asstBubbleWrapper.dataset.rawContent) {
@@ -2194,6 +2233,7 @@ const Chat = {
 
                     this.highlightCode(contentEl);
                     this.enhanceTablesAndMeters(contentEl);
+                    if (window.lucide) lucide.createIcons();
                 }
                 return;
             }
@@ -2350,6 +2390,118 @@ const Chat = {
                 span.textContent = originalText;
             }, 2000);
         }
+    },
+
+    /* ============================================================
+       QUESTION TIMELINE NAVIGATOR (GEMINI / CHATGPT STYLE)
+       ============================================================ */
+    initQuestionsNav() {
+        const container = document.getElementById('messages-container');
+        if (!container) return;
+
+        let scrollTimeout = null;
+        container.addEventListener('scroll', () => {
+            if (scrollTimeout) return;
+            scrollTimeout = setTimeout(() => {
+                scrollTimeout = null;
+                this.highlightActiveQuestionIndicator();
+            }, 60);
+        }, { passive: true });
+    },
+
+    updateQuestionsNav() {
+        const navContainer = document.getElementById('questions-nav-container');
+        const track = document.getElementById('questions-nav-track');
+        if (!navContainer || !track) return;
+
+        const streamContainer = document.getElementById('chat-stream');
+        if (!streamContainer) {
+            navContainer.classList.add('hidden');
+            return;
+        }
+
+        const userMsgs = streamContainer.querySelectorAll('.user-message-node');
+        if (userMsgs.length < 2) {
+            navContainer.classList.add('hidden');
+            track.innerHTML = '';
+            return;
+        }
+
+        navContainer.classList.remove('hidden');
+        track.innerHTML = Array.from(userMsgs).map((el, idx) => {
+            const raw = el.dataset.rawContent || '';
+            const preview = raw.length > 50 ? raw.substring(0, 47) + '...' : raw;
+            const cleanPreview = preview.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const numPersian = this.toPersianDigits(idx + 1);
+            return `
+                <div class="question-nav-item group/pill" data-target-id="${el.id}" data-index="${idx}" onclick="Chat.scrollToUserMessage('${el.id}')" title="رفتن به سوال ${numPersian}">
+                    <div class="question-nav-pill"></div>
+                    <div class="question-nav-tooltip shadow-2xl">
+                        <span class="font-bold text-blue-400">سوال ${numPersian}:</span>
+                        <span class="text-gray-200 mr-1">${cleanPreview || 'متن سوال'}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        this.highlightActiveQuestionIndicator();
+    },
+
+    scrollToUserMessage(targetId) {
+        const targetEl = document.getElementById(targetId);
+        if (!targetEl) return;
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        const bubble = targetEl.querySelector('.user-msg-bubble') || targetEl;
+        bubble.classList.remove('user-message-highlight');
+        void bubble.offsetWidth;
+        bubble.classList.add('user-message-highlight');
+        setTimeout(() => {
+            bubble.classList.remove('user-message-highlight');
+        }, 1600);
+
+        this.highlightActiveQuestionIndicator(targetId);
+    },
+
+    highlightActiveQuestionIndicator(forcedTargetId = null) {
+        const navContainer = document.getElementById('questions-nav-container');
+        if (!navContainer || navContainer.classList.contains('hidden')) return;
+
+        const container = document.getElementById('messages-container');
+        const streamContainer = document.getElementById('chat-stream');
+        if (!container || !streamContainer) return;
+
+        const userMsgs = Array.from(streamContainer.querySelectorAll('.user-message-node'));
+        if (userMsgs.length === 0) return;
+
+        let activeMsgId = forcedTargetId;
+        if (!activeMsgId) {
+            const containerRect = container.getBoundingClientRect();
+            const referenceY = containerRect.top + 80;
+
+            let closestDiff = Infinity;
+            activeMsgId = userMsgs[0].id;
+
+            userMsgs.forEach(el => {
+                const rect = el.getBoundingClientRect();
+                const diff = Math.abs(rect.top - referenceY);
+                if (rect.top <= containerRect.bottom && rect.bottom >= containerRect.top) {
+                    if (diff < closestDiff) {
+                        closestDiff = diff;
+                        activeMsgId = el.id;
+                    }
+                }
+            });
+        }
+
+        const navItems = navContainer.querySelectorAll('.question-nav-item');
+        navItems.forEach(item => {
+            if (item.getAttribute('data-target-id') === activeMsgId) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
     }
 };
 
