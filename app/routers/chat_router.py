@@ -3,6 +3,8 @@ import uuid
 import json
 import re
 import datetime
+import asyncio
+import logging
 from typing import Optional
 from urllib.parse import quote
 from pydantic import BaseModel
@@ -17,6 +19,35 @@ from app.document_parser import extract_text_from_file
 from app.security_service import security_service
 from app.export_service import export_to_docx, export_to_xlsx, detect_export_intent
 from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+async def update_session_summary_background(session_id: str, model_name: str):
+    """
+    Background worker that updates the rolling conversation summary for a session
+    to ensure long-term topic continuity across all turns.
+    """
+    try:
+        from app.database import SessionLocal, ChatSession
+        db = SessionLocal()
+        try:
+            s = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+            if not s:
+                return
+            msg_list = [{"role": m.role, "content": m.content} for m in s.messages]
+            if len(msg_list) >= 2:
+                new_summary = await ollama_service.generate_conversation_summary(
+                    messages=msg_list,
+                    existing_summary=getattr(s, "conversation_summary", None),
+                    model=model_name
+                )
+                if new_summary and new_summary.strip():
+                    s.conversation_summary = new_summary.strip()
+                    db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Failed to update session summary for {session_id}: {e}")
 
 class ExportRequest(BaseModel):
     format: str = "docx"
@@ -150,6 +181,7 @@ def get_session_details(
         "title": sess.title,
         "model_name": sess.model_name,
         "system_prompt": sess.system_prompt,
+        "conversation_summary": getattr(sess, "conversation_summary", None),
         "created_at": sess.created_at.isoformat(),
         "messages": messages
     }
@@ -327,12 +359,22 @@ async def send_message(
     sess.updated_at = datetime.datetime.utcnow()
     db.commit()
 
-    # 4. Prepare Context from Message History (Memory)
+    # 4. Prepare Context from Message History & Session Continuity Summary
     history_messages = [
         {"role": m.role, "content": m.content}
         for m in sess.messages
         if m.id != user_msg.id
     ]
+
+    # Session Summary for Continuity
+    session_summary = getattr(sess, "conversation_summary", None)
+    if not session_summary and len(history_messages) >= 2:
+        prev_user_queries = [
+            m["content"][:140].strip()
+            for m in history_messages if m["role"] == "user" and m.get("content")
+        ]
+        if prev_user_queries:
+            session_summary = f"موضوعات و درخواست‌های پیشین کاربر در این گفتگو: {' | '.join(prev_user_queries[-4:])}"
 
     ref_prompts = get_reference_prompts(db)
     file_summary_tpl = ref_prompts.get("file_summary_prompt")
@@ -345,7 +387,8 @@ async def send_message(
         attached_document_text=doc_text,
         attached_document_name=doc_name,
         file_summary_template=file_summary_tpl,
-        file_question_template=file_question_tpl
+        file_question_template=file_question_tpl,
+        conversation_summary=session_summary
     )
 
     client_ip = request.client.host if request.client else "127.0.0.1"
@@ -448,6 +491,9 @@ async def send_message(
             )
             bg_db.add(prompt_log)
             bg_db.commit()
+
+            # Trigger asynchronous background session summarization to maintain topic continuity
+            asyncio.create_task(update_session_summary_background(sess.id, active_model))
 
             if db_user:
                 yield f"data: {json.dumps({'tokens_used': db_user.tokens_used, 'token_quota': db_user.token_quota, 'update_stats': True, 'export_intent': user_export_intent})}\n\n"

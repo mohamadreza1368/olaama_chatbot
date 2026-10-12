@@ -59,6 +59,7 @@ class ChatSession(Base):
     title = Column(String(200), default="New Chat", nullable=False)
     system_prompt = Column(Text, default="", nullable=True)
     model_name = Column(String(100), default="qwen:0.5b", nullable=False)
+    conversation_summary = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
 
@@ -278,6 +279,13 @@ def migrate_schema():
                     conn.exec_driver_sql("ALTER TABLE chat_messages ADD COLUMN tokens INTEGER DEFAULT 0")
                 if "reasoning" not in msg_cols:
                     conn.exec_driver_sql("ALTER TABLE chat_messages ADD COLUMN reasoning TEXT")
+        except Exception:
+            pass
+
+        try:
+            sess_cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(chat_sessions)").fetchall()]
+            if sess_cols and "conversation_summary" not in sess_cols:
+                conn.exec_driver_sql("ALTER TABLE chat_sessions ADD COLUMN conversation_summary TEXT")
         except Exception:
             pass
 

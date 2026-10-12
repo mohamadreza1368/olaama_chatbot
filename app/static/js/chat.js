@@ -1665,7 +1665,25 @@ const Chat = {
                 } else {
                     if (welcomeScreen) welcomeScreen.classList.remove('hidden');
                 }
+                
+                const summaryChip = document.getElementById('session-summary-chip');
+                if (summaryChip) {
+                    if (data.conversation_summary && data.conversation_summary.trim()) {
+                        summaryChip.classList.remove('hidden');
+                        summaryChip.classList.add('flex');
+                        summaryChip.title = `خلاصه پیوستگی موضوعی گفتگو:\n${data.conversation_summary}`;
+                    } else if (data.messages && data.messages.length >= 2) {
+                        summaryChip.classList.remove('hidden');
+                        summaryChip.classList.add('flex');
+                        summaryChip.title = 'پیوستگی موضوعی برای پیام‌های بعدی به صورت خودکار فعال است.';
+                    } else {
+                        summaryChip.classList.add('hidden');
+                        summaryChip.classList.remove('flex');
+                    }
+                }
+
                 this.updateQuestionsNav();
+                if (window.lucide) lucide.createIcons();
             }
         } catch (e) {
             console.error('Error switching session:', e);

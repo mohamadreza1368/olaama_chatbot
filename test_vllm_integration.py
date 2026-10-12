@@ -138,3 +138,40 @@ async def test_vllm_reasoning_tokens_stream():
         # Confirm they do not bleed into each other
         assert "پاسخ نهایی تحلیلی" not in full_reasoning
         assert "در حال محاسبه" not in full_content
+
+@pytest.mark.anyio
+async def test_session_conversation_summary_generation():
+    service = LLMService(base_url="http://127.0.0.1:8005", provider="vllm")
+    
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "choices": [
+            {"message": {"content": "خلاصه گفتگو: کاربر درباره قیمت میلگرد در بورس کالا سوال پرسید و دستیار آمار معاملات را ارائه کرد."}}
+        ]
+    }
+    
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_resp
+        messages = [
+            {"role": "user", "content": "قیمت میلگرد چنده؟"},
+            {"role": "assistant", "content": "قیمت میانگین ۲۵ هزار تومان است."}
+        ]
+        summary = await service.generate_conversation_summary(messages)
+        assert "قیمت میلگرد" in summary
+        assert "بورس کالا" in summary
+
+def test_build_context_messages_with_conversation_summary():
+    service = LLMService(base_url="http://127.0.0.1:8005", provider="vllm")
+    summary = "خلاصه سوابق: کاربر مدیر معاملات است و درباره عرضه شمش طلا گفتگو شده است."
+    
+    context = service.build_context_messages(
+        history_messages=[{"role": "user", "content": "عرضه بعدی کی است؟"}],
+        current_prompt="حجم عرضه چقدر است؟",
+        conversation_summary=summary
+    )
+    
+    system_msg = context[0]["content"]
+    assert "خلاصه و زمینه اصلی گفتگوی این نشست" in system_msg
+    assert "عرضه شمش طلا" in system_msg
+

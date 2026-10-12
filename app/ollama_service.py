@@ -124,7 +124,8 @@ class LLMService:
         attached_document_text: str = None,
         attached_document_name: str = None,
         file_summary_template: str = None,
-        file_question_template: str = None
+        file_question_template: str = None,
+        conversation_summary: str = None
     ) -> List[Dict[str, str]]:
         formatted_messages = []
 
@@ -140,6 +141,17 @@ class LLMService:
             sys_content = f"{base_sys_prompt}{guardrail}"
         else:
             sys_content = base_sys_prompt
+
+        # 1.1 Injected Session Summary for Topic Continuity
+        if conversation_summary and conversation_summary.strip():
+            clean_summary = conversation_summary.strip()
+            summary_directive = (
+                "\n\n### 📋 خلاصه و زمینه اصلی گفتگوی این نشست (Conversation Continuity & Summary):\n"
+                "برای حفظ پیوستگی موضوعی و عدم انحراف از متن اصلی، خلاصه مباحث، سوالات و توافقات قبلی کاربر در این گفتگو به شرح زیر است. پاسخ جدید شما باید کاملاً هماهنگ و مرتبط با این روند و داده‌های قبلی باشد:\n"
+                f"{clean_summary}\n"
+                "----------------------------------------"
+            )
+            sys_content += summary_directive
 
         formatted_messages.append({"role": "system", "content": sys_content})
 
@@ -348,6 +360,100 @@ class LLMService:
                 yield json.dumps({"error": "ارتباط با Ollama محلی برقرار نشد. لطفاً مطمئن شوید سرویس Ollama در حال اجرا است (دستور: ollama serve)."}, ensure_ascii=False)
             except Exception as e:
                 yield json.dumps({"error": f"خطا در پردازش استریم: {str(e)}"}, ensure_ascii=False)
+
+    async def generate_conversation_summary(
+        self,
+        messages: List[Dict[str, str]],
+        existing_summary: str = None,
+        model: str = None
+    ) -> str:
+        """
+        Generate a concise, structured conversation summary of the session to ensure topic continuity.
+        """
+        if not messages or len(messages) < 2:
+            return ""
+
+        transcript_lines = []
+        for m in messages[-16:]:
+            role_title = "کاربر" if m.get("role") == "user" else "دستیار هوش مصنوعی"
+            content = (m.get("content") or "").strip()
+            if "[File:" in content:
+                content = content.split("]", 1)[-1].strip()
+            if len(content) > 300:
+                content = content[:300] + "..."
+            if content:
+                transcript_lines.append(f"{role_title}: {content}")
+
+        transcript_text = "\n".join(transcript_lines)
+        if not transcript_text:
+            return ""
+
+        summary_prompt = (
+            "وظیفه شما استخراج خلاصه‌ای منسجم، دقیق و فشرده از مکالمه زیر به زبان فارسی است.\n"
+            "این خلاصه باید شامل موارد زیر باشد:\n"
+            "۱. موضوع اصلی و هدف گفتگوی کاربر\n"
+            "۲. مهم‌ترین سوالات، درخواست‌ها و داده‌های ارائه شده\n"
+            "۳. تصمیمات یا جمع‌بندی‌های ارائه شده توسط دستیار\n"
+            "خلاصه باید بین ۸۰ الی ۱۸۰ کلمه باشد و از حاشیه‌پردازی پرهیز کند. فقط متن خلاصه را بنویسید.\n\n"
+            f"متن مکالمات:\n{transcript_text}"
+        )
+
+        target_model = model or self.get_default_model()
+        active_provider = self._active_provider or self.provider
+
+        try:
+            if active_provider in ("vllm", "openai"):
+                headers = self._get_vllm_headers()
+                url = f"{self.vllm_base_url}/v1/chat/completions"
+                payload = {
+                    "model": target_model,
+                    "messages": [
+                        {"role": "system", "content": "شما سیستم هوشمند خلاصه‌سازی و مدیریت حافظه گفتگوها هستید."},
+                        {"role": "user", "content": summary_prompt}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 512,
+                    "stream": False
+                }
+                async with httpx.AsyncClient(timeout=25.0) as client:
+                    resp = await client.post(url, json=payload, headers=headers)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        choices = data.get("choices", [])
+                        if choices:
+                            generated = choices[0].get("message", {}).get("content", "").strip()
+                            if generated:
+                                return generated
+            else:
+                url = f"{self.ollama_base_url}/api/chat"
+                payload = {
+                    "model": target_model or settings.DEFAULT_MODEL,
+                    "messages": [
+                        {"role": "system", "content": "شما سیستم هوشمند خلاصه‌سازی و مدیریت حافظه گفتگوها هستید."},
+                        {"role": "user", "content": summary_prompt}
+                    ],
+                    "stream": False,
+                    "options": {"temperature": 0.3, "num_predict": 512}
+                }
+                async with httpx.AsyncClient(timeout=25.0) as client:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        generated = data.get("message", {}).get("content", "").strip()
+                        if generated:
+                            return generated
+        except Exception:
+            pass
+
+        # Extractive fallback if LLM request fails or times out
+        user_queries = [
+            m.get("content", "")[:120].strip()
+            for m in messages if m.get("role") == "user" and m.get("content")
+        ]
+        if user_queries:
+            recent_q = user_queries[-4:]
+            return f"موضوعات و پرسش‌های اصلی مطرح‌شده در این گفتگو شامل: {' | '.join(recent_q)} است."
+        return ""
 
 # Service instances and aliases for backward compatibility
 LLMServiceClass = LLMService
