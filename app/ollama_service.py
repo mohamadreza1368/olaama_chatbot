@@ -3,29 +3,109 @@ import httpx
 from typing import AsyncGenerator, List, Dict, Any
 from app.config import settings
 
-class OllamaService:
-    def __init__(self, base_url: str = settings.OLLAMA_BASE_URL):
-        self.base_url = base_url.rstrip("/")
+class LLMService:
+    def __init__(
+        self,
+        provider: str = settings.LLM_PROVIDER,
+        vllm_base_url: str = settings.VLLM_BASE_URL,
+        ollama_base_url: str = settings.OLLAMA_BASE_URL,
+        base_url: str = None
+    ):
+        self.provider = (provider or "vllm").lower()
+        self.vllm_base_url = (vllm_base_url or "http://0.0.0.0:8005").rstrip("/")
+        self.ollama_base_url = (ollama_base_url or "http://0.0.0.0:11434").rstrip("/")
+
+        # Backward compatibility if base_url is explicitly provided
+        if base_url:
+            cleaned = base_url.rstrip("/")
+            if ":8005" in cleaned or "vllm" in cleaned:
+                self.vllm_base_url = cleaned
+                self.provider = "vllm"
+            else:
+                self.ollama_base_url = cleaned
+                self.base_url = cleaned
+        else:
+            self.base_url = self.vllm_base_url if self.provider in ("vllm", "openai") else self.ollama_base_url
+
+        self._active_provider: str = self.provider
+        self.cached_models: List[str] = []
 
     async def check_health(self) -> bool:
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                res = await client.get(f"{self.base_url}/api/tags")
-                return res.status_code == 200
-        except Exception:
-            return False
+        # 1. Check vLLM if configured or in auto mode
+        if self.provider in ("vllm", "openai", "auto"):
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    try:
+                        res = await client.get(f"{self.vllm_base_url}/health")
+                        if res.status_code == 200:
+                            self._active_provider = "vllm"
+                            return True
+                    except Exception:
+                        pass
+
+                    res_models = await client.get(f"{self.vllm_base_url}/v1/models")
+                    if res_models.status_code == 200:
+                        self._active_provider = "vllm"
+                        return True
+            except Exception:
+                pass
+
+        # 2. Check Ollama if configured or in auto mode
+        if self.provider in ("ollama", "auto"):
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    res = await client.get(f"{self.ollama_base_url}/api/tags")
+                    if res.status_code == 200:
+                        self._active_provider = "ollama"
+                        return True
+            except Exception:
+                pass
+
+        return False
 
     async def list_models(self) -> List[str]:
-        try:
-            async with httpx.AsyncClient(timeout=4.0) as client:
-                res = await client.get(f"{self.base_url}/api/tags")
-                if res.status_code == 200:
-                    data = res.json()
-                    models = [m.get("name") for m in data.get("models", []) if m.get("name")]
-                    return models if models else [settings.DEFAULT_MODEL]
-        except Exception:
-            pass
-        return [settings.DEFAULT_MODEL]
+        # 1. Query vLLM
+        if self._active_provider in ("vllm", "openai") or self.provider in ("vllm", "openai", "auto"):
+            try:
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    res = await client.get(f"{self.vllm_base_url}/v1/models")
+                    if res.status_code == 200:
+                        data = res.json()
+                        models = [m.get("id") for m in data.get("data", []) if m.get("id")]
+                        if models:
+                            self.cached_models = models
+                            self._active_provider = "vllm"
+                            return models
+            except Exception:
+                pass
+
+        # 2. Query Ollama
+        if self._active_provider == "ollama" or self.provider in ("ollama", "auto"):
+            try:
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    res = await client.get(f"{self.ollama_base_url}/api/tags")
+                    if res.status_code == 200:
+                        data = res.json()
+                        models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+                        if models:
+                            self.cached_models = models
+                            self._active_provider = "ollama"
+                            return models
+            except Exception:
+                pass
+
+        if self.cached_models:
+            return self.cached_models
+
+        fallback = settings.DEFAULT_MODEL if settings.DEFAULT_MODEL != "default" else "vllm-model"
+        return [fallback]
+
+    def get_default_model(self) -> str:
+        if self.cached_models:
+            return self.cached_models[0]
+        if settings.DEFAULT_MODEL and settings.DEFAULT_MODEL != "default":
+            return settings.DEFAULT_MODEL
+        return "vllm-model"
 
     def build_context_messages(
         self,
@@ -115,9 +195,100 @@ class OllamaService:
     async def stream_chat(
         self,
         messages: List[Dict[str, str]],
-        model: str = settings.DEFAULT_MODEL
+        model: str = None
     ) -> AsyncGenerator[str, None]:
-        url = f"{self.base_url}/api/chat"
+        active_provider = self._active_provider or self.provider
+        target_model = model
+
+        # Model auto-resolution for vLLM
+        if active_provider in ("vllm", "openai"):
+            if not target_model or target_model in ("default", "qwen:0.5b"):
+                if not self.cached_models:
+                    await self.list_models()
+                if self.cached_models:
+                    target_model = self.cached_models[0]
+            elif self.cached_models and target_model not in self.cached_models:
+                target_model = self.cached_models[0]
+
+            async for chunk in self._stream_vllm(messages, target_model or "vllm-model"):
+                yield chunk
+        else:
+            async for chunk in self._stream_ollama(messages, target_model or settings.DEFAULT_MODEL):
+                yield chunk
+
+    async def _stream_vllm(
+        self,
+        messages: List[Dict[str, str]],
+        model: str
+    ) -> AsyncGenerator[str, None]:
+        url = f"{self.vllm_base_url}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "temperature": 0.7,
+            "max_tokens": 4096
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            try:
+                async with client.stream("POST", url, json=payload) as response:
+                    if response.status_code != 200:
+                        err_text = await response.aread()
+                        yield json.dumps({"error": f"خطای سرور مدل vLLM ({response.status_code}): {err_text.decode('utf-8')}"})
+                        return
+
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        line_str = line.strip()
+                        if not line_str:
+                            continue
+                        if line_str.startswith("data: "):
+                            line_str = line_str[6:].strip()
+                        if line_str == "[DONE]":
+                            yield json.dumps({"token": "", "done": True})
+                            break
+                        try:
+                            chunk = json.loads(line_str)
+                            choices = chunk.get("choices", [])
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta", {})
+                            msg_chunk = delta.get("content", "")
+                            finish_reason = choices[0].get("finish_reason")
+                            is_done = finish_reason is not None
+
+                            if msg_chunk:
+                                yield json.dumps({
+                                    "token": msg_chunk,
+                                    "done": False
+                                }, ensure_ascii=False)
+                            if is_done:
+                                yield json.dumps({
+                                    "token": "",
+                                    "done": True
+                                }, ensure_ascii=False)
+                                break
+                        except Exception:
+                            continue
+            except httpx.ConnectError:
+                yield json.dumps({
+                    "error": f"ارتباط با سرویس vLLM در آدرس {self.vllm_base_url} برقرار نشد. لطفاً مطمئن شوید کانتینر vLLM روی پورت 8005 در حال اجرا است."
+                }, ensure_ascii=False)
+            except httpx.TimeoutException:
+                yield json.dumps({
+                    "error": "زمان انتظار پاسخ از سرویس vLLM به پایان رسید (Timeout)."
+                }, ensure_ascii=False)
+            except Exception as e:
+                yield json.dumps({"error": f"خطا در پردازش استریم vLLM: {str(e)}"}, ensure_ascii=False)
+
+    async def _stream_ollama(
+        self,
+        messages: List[Dict[str, str]],
+        model: str
+    ) -> AsyncGenerator[str, None]:
+        url = f"{self.ollama_base_url}/api/chat"
         payload = {
             "model": model,
             "messages": messages,
@@ -143,14 +314,19 @@ class OllamaService:
                             yield json.dumps({
                                 "token": msg_chunk,
                                 "done": is_done
-                            })
+                            }, ensure_ascii=False)
                             if is_done:
                                 break
                         except Exception:
                             continue
             except httpx.ConnectError:
-                yield json.dumps({"error": "ارتباط با Ollama محلی برقرار نشد. لطفاً مطمئن شوید سرویس Ollama در حال اجرا است (دستور: ollama serve)."})
+                yield json.dumps({"error": "ارتباط با Ollama محلی برقرار نشد. لطفاً مطمئن شوید سرویس Ollama در حال اجرا است (دستور: ollama serve)."}, ensure_ascii=False)
             except Exception as e:
-                yield json.dumps({"error": f"خطا در پردازش استریم: {str(e)}"})
+                yield json.dumps({"error": f"خطا در پردازش استریم: {str(e)}"}, ensure_ascii=False)
 
-ollama_service = OllamaService()
+# Service instances and aliases for backward compatibility
+LLMServiceClass = LLMService
+OllamaService = LLMService
+ollama_service = LLMService()
+llm_service = ollama_service
+

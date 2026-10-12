@@ -1331,14 +1331,15 @@ const Chat = {
                 if (modelDisplay && data.active_model) {
                     modelDisplay.textContent = data.active_model;
                 }
+                const provName = (data.provider || 'سرویس مدل').toUpperCase();
                 if (indicator) {
                     indicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
-                    indicator.title = 'Ollama آنلاین است';
+                    indicator.title = `${provName} آنلاین و آماده پاسخگویی است`;
                 }
             } else {
                 if (indicator) {
                     indicator.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
-                    indicator.title = 'Ollama در دسترس نیست';
+                    indicator.title = 'سرویس مدل در دسترس نیست';
                 }
             }
         } catch (e) {

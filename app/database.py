@@ -229,6 +229,8 @@ def reset_reference_prompts(db: SessionLocal):
 def get_system_model(db: SessionLocal) -> str:
     setting = db.query(SystemSetting).filter(SystemSetting.key == "active_model").first()
     if setting and setting.value:
+        if settings.LLM_PROVIDER == "vllm" and setting.value == "qwen:0.5b":
+            return settings.DEFAULT_MODEL
         return setting.value
     return settings.DEFAULT_MODEL
 

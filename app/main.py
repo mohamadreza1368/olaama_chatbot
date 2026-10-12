@@ -59,13 +59,15 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # 4. Check Ollama status
-    is_ollama_alive = await ollama_service.check_health()
-    if is_ollama_alive:
+    # 4. Check LLM provider status (vLLM / Ollama)
+    is_llm_alive = await ollama_service.check_health()
+    active_url = settings.VLLM_BASE_URL if settings.LLM_PROVIDER == "vllm" else settings.OLLAMA_BASE_URL
+    provider_name = settings.LLM_PROVIDER.upper()
+    if is_llm_alive:
         models = await ollama_service.list_models()
-        print(f"[Ollama] Connected successfully! Available models: {models}")
+        print(f"[{provider_name}] Connected successfully at {active_url}! Available models: {models}")
     else:
-        print(f"[Ollama Warning] Could not connect to Ollama at {settings.OLLAMA_BASE_URL}. Ensure Ollama is running.")
+        print(f"[{provider_name} Warning] Could not connect to {provider_name} at {active_url}. Ensure service is running.")
 
     # 5. Start background retention task
     cleanup_task = asyncio.create_task(background_cleanup_loop())
@@ -104,10 +106,13 @@ app.include_router(admin_router.router)
 
 @app.get("/api/health", tags=["Health"])
 def health_check():
+    active_url = settings.VLLM_BASE_URL if settings.LLM_PROVIDER == "vllm" else settings.OLLAMA_BASE_URL
     return {
         "status": "healthy",
         "service": getattr(settings, "PROJECT_NAME", "Ollama AI Assistant and Admin Hub"),
-        "environment": getattr(settings, "ENVIRONMENT", os.getenv("ENVIRONMENT", "production"))
+        "environment": getattr(settings, "ENVIRONMENT", os.getenv("ENVIRONMENT", "production")),
+        "llm_provider": settings.LLM_PROVIDER,
+        "llm_endpoint": active_url
     }
 
 @app.get("/")

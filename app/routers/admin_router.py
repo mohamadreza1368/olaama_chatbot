@@ -49,7 +49,10 @@ async def get_system_settings(db: Session = Depends(get_db), admin: User = Depen
     current_prompt = get_system_prompt(db)
     detected_models = await ollama_service.list_models()
     queue_stats = await request_queue.get_queue_stats()
+    active_url = settings.VLLM_BASE_URL if settings.LLM_PROVIDER == "vllm" else settings.OLLAMA_BASE_URL
     return {
+        "llm_provider": settings.LLM_PROVIDER,
+        "llm_url": active_url,
         "active_model": current_model,
         "system_prompt": current_prompt,
         "available_models": detected_models,

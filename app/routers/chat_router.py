@@ -53,7 +53,11 @@ def generate_smart_title(prompt: str) -> str:
 @router.get("/models")
 async def get_models(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     sys_model = get_system_model(db)
-    return {"active_model": sys_model}
+    if sys_model in ("default", "qwen:0.5b", "auto") and settings.LLM_PROVIDER == "vllm":
+        vllm_def = ollama_service.get_default_model()
+        if vllm_def:
+            sys_model = vllm_def
+    return {"active_model": sys_model, "provider": settings.LLM_PROVIDER}
 
 @router.get("/skills")
 def get_active_skills_chat(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
