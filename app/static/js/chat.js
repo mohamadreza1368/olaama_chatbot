@@ -821,42 +821,186 @@ const Chat = {
         }
     },
 
+    splitThinkingAndResult(rawContent) {
+        if (!rawContent) {
+            return { hasThinking: false, thinking: '', result: '', isThinkingActive: false };
+        }
+
+        // Case 1: Closed <think>...</think>
+        const closedMatch = rawContent.match(/^<think>([\s\S]*?)<\/think>([\s\S]*)$/i);
+        if (closedMatch) {
+            return {
+                hasThinking: true,
+                thinking: closedMatch[1].trim(),
+                result: closedMatch[2].trim(),
+                isThinkingActive: false
+            };
+        }
+
+        // Case 2: Open <think>... (actively streaming thinking phase)
+        if (rawContent.startsWith('<think>')) {
+            const thinkingPart = rawContent.slice(7);
+            return {
+                hasThinking: true,
+                thinking: thinkingPart.trim(),
+                result: '',
+                isThinkingActive: true
+            };
+        }
+
+        // Case 3: Embedded <think>...</think> anywhere
+        const embeddedMatch = rawContent.match(/<think>([\s\S]*?)<\/think>/i);
+        if (embeddedMatch) {
+            return {
+                hasThinking: true,
+                thinking: embeddedMatch[1].trim(),
+                result: rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
+                isThinkingActive: false
+            };
+        }
+
+        // Case 4: No thinking tags
+        return {
+            hasThinking: false,
+            thinking: '',
+            result: rawContent,
+            isThinkingActive: false
+        };
+    },
+
+    extractResultText(rawContent) {
+        if (!rawContent) return '';
+        let cleaned = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        cleaned = cleaned.replace(/<think>[\s\S]*$/gi, '').trim();
+        return cleaned;
+    },
+
+    extractThinkingText(rawContent) {
+        if (!rawContent) return '';
+        const match = rawContent.match(/<think>([\s\S]*?)(?:<\/think>|$)/i);
+        return match ? match[1].trim() : '';
+    },
+
+    copyThinkingContent(btn, event) {
+        if (event) event.stopPropagation();
+        const wrapper = btn.closest('.thinking-block-completed, .thinking-block-active');
+        if (!wrapper) return;
+        const bodyEl = wrapper.querySelector('.thinking-body');
+        const text = bodyEl ? (bodyEl.innerText || bodyEl.textContent || '') : '';
+        if (!text) return;
+
+        App.copyToClipboard(text, 'متن فرآیند استدلال کپی شد');
+        const span = btn.querySelector('span');
+        if (span) {
+            const orig = span.textContent;
+            span.textContent = '✓ کپی شد';
+            setTimeout(() => { span.textContent = orig; }, 2000);
+        }
+    },
+
+    renderAssistantMessage(rawContent, isStreaming = false) {
+        const { hasThinking, thinking, result, isThinkingActive } = this.splitThinkingAndResult(rawContent);
+
+        let thinkingHtml = '';
+        if (hasThinking && (thinking || isThinkingActive)) {
+            if (isThinkingActive) {
+                // Live active thinking phase
+                thinkingHtml = `
+                    <div class="thinking-block-active mb-3.5 p-3.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/30 text-xs shadow-xs" dir="rtl">
+                        <div class="flex items-center justify-between pb-2 mb-2 border-b border-amber-500/20 text-amber-600 dark:text-amber-400 font-semibold">
+                            <div class="flex items-center gap-2">
+                                <span class="relative flex h-2.5 w-2.5">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                                </span>
+                                <i data-lucide="brain" class="w-4 h-4 text-amber-500"></i>
+                                <span>در حال تحلیل و استدلال عمیق مدل...</span>
+                            </div>
+                            <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-300 font-mono">
+                                Thinking
+                            </span>
+                        </div>
+                        <div class="thinking-body whitespace-pre-wrap font-mono text-[11px] text-gray-700 dark:text-gray-300 leading-relaxed max-h-60 overflow-y-auto pl-1 opacity-90 select-text">
+                            ${thinking || 'در حال واکاوی داده‌ها و استخراج پاسخ...'}
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Completed thinking block (collapsible)
+                const wordCount = thinking ? thinking.split(/\s+/).filter(Boolean).length : 0;
+                const countBadge = wordCount > 0 ? `${Chat.toPersianDigits(wordCount)} کلمه استدلال` : 'فرآیند تفکر';
+                thinkingHtml = `
+                    <details class="thinking-block-completed mb-3.5 rounded-2xl bg-gray-100/90 dark:bg-[#252528] border border-gray-200 dark:border-gray-700/60 p-3 text-xs transition-all group shadow-xs" dir="rtl">
+                        <summary class="cursor-pointer font-medium text-gray-600 dark:text-gray-400 flex items-center justify-between select-none hover:text-emerald-500 transition-colors">
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                                    <i data-lucide="brain" class="w-3.5 h-3.5"></i>
+                                </div>
+                                <span class="font-semibold text-gray-700 dark:text-gray-300">مشاهده فرآیند استدلال و تفکر مدل</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700/80 text-gray-500 dark:text-gray-400 font-mono">
+                                    ${countBadge}
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="Chat.copyThinkingContent(this, event)" class="p-1 px-2 rounded-lg bg-gray-200/70 dark:bg-gray-700/70 hover:bg-emerald-500 hover:text-white text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-1 transition-colors" title="کپی استدلال">
+                                    <i data-lucide="copy" class="w-3 h-3"></i>
+                                    <span>کپی استدلال</span>
+                                </button>
+                                <div class="flex items-center gap-1 text-gray-400 group-hover:text-emerald-500 text-[11px]">
+                                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200 group-open:rotate-180"></i>
+                                </div>
+                            </div>
+                        </summary>
+                        <div class="thinking-body mt-3 pt-3 border-t border-gray-200 dark:border-gray-700/50 whitespace-pre-wrap font-mono text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed max-h-72 overflow-y-auto pl-1 select-text">
+                            ${thinking}
+                        </div>
+                    </details>
+                `;
+            }
+        }
+
+        let resultHtml = '';
+        if (result) {
+            const rtl = this.isRTLText(result);
+            const dirAttr = rtl ? 'rtl' : 'ltr';
+            let sectionHeader = '';
+            if (hasThinking) {
+                sectionHeader = `
+                    <div class="result-section-header flex items-center gap-2 mb-2 pb-1.5 border-b border-gray-100 dark:border-gray-800 text-xs font-bold text-gray-700 dark:text-gray-200" dir="rtl">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>پاسخ نهایی دستیار:</span>
+                    </div>
+                `;
+            }
+            resultHtml = `
+                <div class="result-section" dir="${dirAttr}">
+                    ${sectionHeader}
+                    <div class="result-content prose-custom text-gray-800 dark:text-gray-200">
+                        ${marked.parse(this.formatVisualElements(result))}
+                    </div>
+                </div>
+            `;
+        } else if (isThinkingActive) {
+            resultHtml = `
+                <div class="result-placeholder flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 py-1" dir="rtl">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>در حال آماده‌سازی پاسخ نهایی...</span>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="assistant-message-body space-y-1">
+                ${thinkingHtml}
+                ${resultHtml}
+            </div>
+        `;
+    },
+
     formatVisualElements(html) {
         if (!html) return '';
 
-        // 1. Transform completed <think>...</think> into an attractive collapsible accordion
-        html = html.replace(/<think>([\s\S]*?)<\/think>/gi, (match, thought) => {
-            const cleanThought = thought.trim();
-            if (!cleanThought) return '';
-            return `
-                <details class="my-2 p-3 rounded-xl bg-gray-100/90 dark:bg-[#252525]/90 border border-gray-200 dark:border-gray-700/60 text-xs text-gray-600 dark:text-gray-300">
-                    <summary class="cursor-pointer font-medium text-gray-500 dark:text-gray-400 flex items-center gap-1.5 select-none hover:text-emerald-500 transition-colors">
-                        <i data-lucide="brain" class="w-3.5 h-3.5 text-emerald-500"></i>
-                        <span>فرایند استدلال و تفکر مدل</span>
-                    </summary>
-                    <div class="mt-2.5 pt-2 border-t border-gray-200 dark:border-gray-700/50 whitespace-pre-wrap leading-relaxed opacity-90 text-[11px] font-sans">
-                        ${cleanThought}
-                    </div>
-                </details>
-            `;
-        });
-
-        // 2. Transform active (unclosed) <think> during live streaming
-        html = html.replace(/<think>([\s\S]*)$/gi, (match, thought) => {
-            return `
-                <details open class="my-2 p-3 rounded-xl bg-emerald-50/50 dark:bg-[#1f2824]/60 border border-emerald-500/30 text-xs text-gray-600 dark:text-gray-300">
-                    <summary class="cursor-pointer font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 select-none">
-                        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping ml-1"></span>
-                        <span>در حال تحلیل و پردازش استدلال...</span>
-                    </summary>
-                    <div class="mt-2.5 pt-2 border-t border-emerald-200/50 dark:border-emerald-800/40 whitespace-pre-wrap leading-relaxed opacity-90 text-[11px] font-sans">
-                        ${thought.trim()}
-                    </div>
-                </details>
-            `;
-        });
-
-        // 3. Format inline ASCII progress bars [████░░░░] 80% in regular text
+        // Format inline ASCII progress bars [████░░░░] 80% in regular text
         return html.replace(/\[([█■#=]{2,}[░□\-_ ]{1,})\]\s*(\(?(\d+(?:\.\d+)?%)\)?)?/g, (match, bar, p2, pct) => {
             const filled = (bar.match(/[█■#=]/g) || []).length;
             const total = bar.length;
@@ -1573,14 +1717,14 @@ const Chat = {
         } else {
             const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(content || '');
             const actionsHtml = this.buildMessageActionToolbar(content, null, hasTables);
-            const parsedHtml = marked.parse(this.formatVisualElements(content || ''));
+            const parsedAssistantHtml = this.renderAssistantMessage(content || '', false);
             renderedContent = `
                 <div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 shadow-sm">
                     AI
                 </div>
                 <div class="flex-1 max-w-[90%] space-y-1">
-                    <div class="prose-custom text-gray-800 dark:text-gray-200" dir="${dirAttr}">
-                        ${parsedHtml}
+                    <div class="assistant-content-container">
+                        ${parsedAssistantHtml}
                     </div>
                     <div class="msg-actions-container w-full">
                         ${actionsHtml}
@@ -1708,7 +1852,7 @@ const Chat = {
             if (accumulatedResponse.trim()) {
                 const rtl = this.isRTLText(accumulatedResponse);
                 contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
-                contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
+                contentEl.innerHTML = this.renderAssistantMessage(accumulatedResponse, false);
 
                 const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
                 let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
@@ -1796,7 +1940,7 @@ const Chat = {
                 AI
             </div>
             <div class="flex-1 max-w-[90%] space-y-1">
-                <div class="prose-custom text-gray-800 dark:text-gray-200 streaming-content" dir="auto">
+                <div class="assistant-content-container streaming-content" dir="auto">
                     <span class="inline-flex items-center gap-1.5 text-xs text-gray-400 animate-pulse">
                         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
                         در حال نگارش پاسخ...
@@ -1948,9 +2092,7 @@ const Chat = {
                             if (parsed.token) {
                                 accumulatedResponse += parsed.token;
                                 this.currentAccumulatedResponse = accumulatedResponse;
-                                const rtl = this.isRTLText(accumulatedResponse);
-                                contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
-                                contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
+                                contentEl.innerHTML = this.renderAssistantMessage(accumulatedResponse, true);
                                 this.highlightCode(contentEl);
                                 this.enhanceTablesAndMeters(contentEl);
                                 this.scrollToBottom();
@@ -1963,9 +2105,7 @@ const Chat = {
             }
 
             if (accumulatedResponse.trim() && !asstBubbleWrapper.dataset.rawContent) {
-                const rtl = this.isRTLText(accumulatedResponse);
-                contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
-                contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
+                contentEl.innerHTML = this.renderAssistantMessage(accumulatedResponse, false);
                 
                 const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
                 let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
@@ -1985,9 +2125,7 @@ const Chat = {
             this.hideQueuePopup(true);
             if (err.name === 'AbortError' || !this.isStreaming) {
                 if (accumulatedResponse.trim() && !asstBubbleWrapper.dataset.rawContent) {
-                    const rtl = this.isRTLText(accumulatedResponse);
-                    contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
-                    contentEl.innerHTML = marked.parse(this.formatVisualElements(accumulatedResponse));
+                    contentEl.innerHTML = this.renderAssistantMessage(accumulatedResponse, false);
                     
                     const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
                     let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
@@ -2136,9 +2274,12 @@ const Chat = {
         if (!btn) return '';
         const wrapper = btn.closest('.animate-fade-in');
         if (!wrapper) return '';
-        if (wrapper.dataset.rawContent) return wrapper.dataset.rawContent;
-        const proseEl = wrapper.querySelector('.prose-custom');
-        return proseEl ? (proseEl.innerText || proseEl.textContent || '') : '';
+        let content = wrapper.dataset.rawContent || '';
+        if (!content) {
+            const proseEl = wrapper.querySelector('.result-content, .prose-custom');
+            content = proseEl ? (proseEl.innerText || proseEl.textContent || '') : '';
+        }
+        return this.extractResultText(content);
     },
 
     copyMessageContent(btn) {

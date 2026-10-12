@@ -531,6 +531,13 @@ def handle_export(
     if not export_content or not export_content.strip():
         raise HTTPException(status_code=400, detail="محتوایی برای تولید خروجی فایل وجود ندارد.")
 
+    # Strip thinking blocks from export content so internal thoughts are never included in Word or Excel files
+    export_content = re.sub(r'<think>[\s\S]*?<\/think>', '', export_content, flags=re.IGNORECASE).strip()
+    export_content = re.sub(r'<think>[\s\S]*$', '', export_content, flags=re.IGNORECASE).strip()
+
+    if not export_content:
+        raise HTTPException(status_code=400, detail="محتوایی برای تولید خروجی فایل وجود ندارد.")
+
     format_clean = format_type.lower().replace(".", "").strip()
     clean_title = re.sub(r'[\/\\:*?"<>|]', '_', doc_title).strip() or "گزارش_تحلیلی"
 
