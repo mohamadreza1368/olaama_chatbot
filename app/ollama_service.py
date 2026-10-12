@@ -259,9 +259,6 @@ class LLMService:
                         if line_str.startswith("data: "):
                             line_str = line_str[6:].strip()
                         if line_str == "[DONE]":
-                            if is_in_thinking:
-                                yield json.dumps({"token": "\n</think>\n\n", "done": False}, ensure_ascii=False)
-                                is_in_thinking = False
                             yield json.dumps({"token": "", "done": True}, ensure_ascii=False)
                             break
                         try:
@@ -275,28 +272,26 @@ class LLMService:
                             finish_reason = choices[0].get("finish_reason")
                             is_done = finish_reason is not None
 
-                            # Handle reasoning/thinking tokens from vLLM --reasoning-parser
+                            # 1. Pure reasoning stream from vLLM
                             if reasoning_chunk:
-                                if not is_in_thinking:
-                                    yield json.dumps({"token": "<think>\n", "done": False}, ensure_ascii=False)
-                                    is_in_thinking = True
-                                yield json.dumps({"token": reasoning_chunk, "done": False}, ensure_ascii=False)
+                                yield json.dumps({
+                                    "reasoning": reasoning_chunk,
+                                    "token": "",
+                                    "done": False
+                                }, ensure_ascii=False)
 
+                            # 2. Pure content response stream
                             if msg_chunk:
-                                if is_in_thinking:
-                                    yield json.dumps({"token": "\n</think>\n\n", "done": False}, ensure_ascii=False)
-                                    is_in_thinking = False
                                 yield json.dumps({
                                     "token": msg_chunk,
+                                    "content": msg_chunk,
                                     "done": False
                                 }, ensure_ascii=False)
 
                             if is_done:
-                                if is_in_thinking:
-                                    yield json.dumps({"token": "\n</think>\n\n", "done": False}, ensure_ascii=False)
-                                    is_in_thinking = False
                                 yield json.dumps({
                                     "token": "",
+                                    "content": "",
                                     "done": True
                                 }, ensure_ascii=False)
                                 break

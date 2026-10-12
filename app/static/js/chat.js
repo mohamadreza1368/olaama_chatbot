@@ -898,12 +898,23 @@ const Chat = {
         }
     },
 
-    renderAssistantMessage(rawContent, isStreaming = false) {
-        const { hasThinking, thinking, result, isThinkingActive } = this.splitThinkingAndResult(rawContent);
+    renderAssistantMessage(reasoning, content, isReasoningActive = false) {
+        let actualReasoning = reasoning || '';
+        let actualContent = content || '';
+        let activeThinking = isReasoningActive;
+
+        // Backward compatibility if called with (rawContent, isStreaming)
+        if (content === undefined || typeof content === 'boolean') {
+            const isStreaming = Boolean(content);
+            const parsed = this.splitThinkingAndResult(reasoning || '');
+            actualReasoning = parsed.thinking;
+            actualContent = parsed.result;
+            activeThinking = parsed.isThinkingActive || (isStreaming && !actualContent && Boolean(actualReasoning));
+        }
 
         let thinkingHtml = '';
-        if (hasThinking && (thinking || isThinkingActive)) {
-            if (isThinkingActive) {
+        if (actualReasoning || activeThinking) {
+            if (activeThinking) {
                 // Live active thinking phase
                 thinkingHtml = `
                     <div class="thinking-block-active mb-3.5 p-3.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/30 text-xs shadow-xs" dir="rtl">
@@ -921,13 +932,13 @@ const Chat = {
                             </span>
                         </div>
                         <div class="thinking-body whitespace-pre-wrap font-mono text-[11px] text-gray-700 dark:text-gray-300 leading-relaxed max-h-60 overflow-y-auto pl-1 opacity-90 select-text">
-                            ${thinking || 'در حال واکاوی داده‌ها و استخراج پاسخ...'}
+                            ${actualReasoning || 'در حال واکاوی داده‌ها و استخراج پاسخ...'}
                         </div>
                     </div>
                 `;
             } else {
                 // Completed thinking block (collapsible)
-                const wordCount = thinking ? thinking.split(/\s+/).filter(Boolean).length : 0;
+                const wordCount = actualReasoning ? actualReasoning.split(/\s+/).filter(Boolean).length : 0;
                 const countBadge = wordCount > 0 ? `${Chat.toPersianDigits(wordCount)} کلمه استدلال` : 'فرآیند تفکر';
                 thinkingHtml = `
                     <details class="thinking-block-completed mb-3.5 rounded-2xl bg-gray-100/90 dark:bg-[#252528] border border-gray-200 dark:border-gray-700/60 p-3 text-xs transition-all group shadow-xs" dir="rtl">
@@ -952,7 +963,7 @@ const Chat = {
                             </div>
                         </summary>
                         <div class="thinking-body mt-3 pt-3 border-t border-gray-200 dark:border-gray-700/50 whitespace-pre-wrap font-mono text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed max-h-72 overflow-y-auto pl-1 select-text">
-                            ${thinking}
+                            ${actualReasoning}
                         </div>
                     </details>
                 `;
@@ -960,11 +971,11 @@ const Chat = {
         }
 
         let resultHtml = '';
-        if (result) {
-            const rtl = this.isRTLText(result);
+        if (actualContent) {
+            const rtl = this.isRTLText(actualContent);
             const dirAttr = rtl ? 'rtl' : 'ltr';
             let sectionHeader = '';
-            if (hasThinking) {
+            if (actualReasoning) {
                 sectionHeader = `
                     <div class="result-section-header flex items-center gap-2 mb-2 pb-1.5 border-b border-gray-100 dark:border-gray-800 text-xs font-bold text-gray-700 dark:text-gray-200" dir="rtl">
                         <i data-lucide="sparkles" class="w-3.5 h-3.5 text-emerald-500"></i>
@@ -976,11 +987,11 @@ const Chat = {
                 <div class="result-section" dir="${dirAttr}">
                     ${sectionHeader}
                     <div class="result-content prose-custom text-gray-800 dark:text-gray-200">
-                        ${marked.parse(this.formatVisualElements(result))}
+                        ${marked.parse(this.formatVisualElements(actualContent))}
                     </div>
                 </div>
             `;
-        } else if (isThinkingActive) {
+        } else if (activeThinking) {
             resultHtml = `
                 <div class="result-placeholder flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 py-1" dir="rtl">
                     <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -1195,6 +1206,21 @@ const Chat = {
         const input = document.getElementById('chat-input');
         if (!input) return;
 
+        const setRTL = () => {
+            input.setAttribute('dir', 'rtl');
+            input.style.direction = 'rtl';
+            input.style.textAlign = 'right';
+        };
+
+        const setLTR = () => {
+            input.setAttribute('dir', 'ltr');
+            input.style.direction = 'ltr';
+            input.style.textAlign = 'left';
+        };
+
+        // Always initialize strictly RTL
+        setRTL();
+
         input.addEventListener('input', () => {
             input.style.height = 'auto';
             input.style.height = Math.min(input.scrollHeight, 180) + 'px';
@@ -1202,11 +1228,17 @@ const Chat = {
             const rawVal = input.value;
             const val = rawVal.trim();
             if (val) {
-                const rtl = this.isRTLText(val);
-                input.setAttribute('dir', rtl ? 'rtl' : 'ltr');
-                input.style.textAlign = rtl ? 'right' : 'left';
+                // If it contains ANY Persian/Arabic character, or starts with slash, KEEP RTL!
+                const hasPersian = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(val);
+                const isPureEnglish = !hasPersian && /^[a-zA-Z0-9\s!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]+$/.test(val);
+
+                if (isPureEnglish && !rawVal.startsWith('/')) {
+                    setLTR();
+                } else {
+                    setRTL();
+                }
             } else {
-                input.setAttribute('dir', 'auto');
+                setRTL();
             }
 
             // Slash popup trigger check
@@ -1625,7 +1657,7 @@ const Chat = {
                 if (data.messages && data.messages.length > 0) {
                     if (welcomeScreen) welcomeScreen.classList.add('hidden');
                     data.messages.forEach(msg => {
-                        this.appendMessage(msg.role, msg.content, msg.has_attachment, msg.attachment_name);
+                        this.appendMessage(msg.role, msg.content, msg.has_attachment, msg.attachment_name, msg.reasoning);
                     });
                     this.scrollToBottom();
                 } else {
@@ -1689,7 +1721,7 @@ const Chat = {
         }
     },
 
-    appendMessage(role, content, hasAttachment = false, attachmentName = '') {
+    appendMessage(role, content, hasAttachment = false, attachmentName = '', reasoning = null) {
         const streamContainer = document.getElementById('chat-stream');
         const welcomeScreen = document.getElementById('welcome-screen');
         if (welcomeScreen) welcomeScreen.classList.add('hidden');
@@ -1717,7 +1749,7 @@ const Chat = {
         } else {
             const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(content || '');
             const actionsHtml = this.buildMessageActionToolbar(content, null, hasTables);
-            const parsedAssistantHtml = this.renderAssistantMessage(content || '', false);
+            const parsedAssistantHtml = this.renderAssistantMessage(reasoning || '', content || '', false);
             renderedContent = `
                 <div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 shadow-sm">
                     AI
@@ -1734,6 +1766,9 @@ const Chat = {
         }
 
         msgDiv.dataset.rawContent = content || '';
+        if (reasoning) {
+            msgDiv.dataset.rawReasoning = reasoning;
+        }
         msgDiv.innerHTML = renderedContent;
         streamContainer.appendChild(msgDiv);
 
@@ -1846,23 +1881,27 @@ const Chat = {
         // 3. Finalize UI immediately with whatever text was accumulated
         const contentEl = this.activeContentEl;
         const asstBubbleWrapper = this.activeBubbleWrapper;
-        const accumulatedResponse = this.currentAccumulatedResponse || '';
+        const accumulatedReasoning = this.currentAccumulatedReasoning || '';
+        const accumulatedContent = this.currentAccumulatedContent || '';
 
         if (contentEl && asstBubbleWrapper) {
-            if (accumulatedResponse.trim()) {
-                const rtl = this.isRTLText(accumulatedResponse);
+            if (accumulatedContent.trim() || accumulatedReasoning.trim()) {
+                const rtl = this.isRTLText(accumulatedContent);
                 contentEl.setAttribute('dir', rtl ? 'rtl' : 'ltr');
-                contentEl.innerHTML = this.renderAssistantMessage(accumulatedResponse, false);
+                contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, false);
 
-                const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
+                const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedContent);
                 let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
                 if (!actionsContainer) {
                     actionsContainer = document.createElement('div');
                     actionsContainer.className = 'msg-actions-container w-full';
                     contentEl.parentNode.appendChild(actionsContainer);
                 }
-                actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedResponse, null, hasTables);
-                asstBubbleWrapper.dataset.rawContent = accumulatedResponse;
+                actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedContent, null, hasTables);
+                asstBubbleWrapper.dataset.rawContent = accumulatedContent;
+                if (accumulatedReasoning) {
+                    asstBubbleWrapper.dataset.rawReasoning = accumulatedReasoning;
+                }
 
                 this.highlightCode(contentEl);
                 this.enhanceTablesAndMeters(contentEl);
@@ -1969,8 +2008,10 @@ const Chat = {
         this.abortController = new AbortController();
         this.activeContentEl = contentEl;
         this.activeBubbleWrapper = asstBubbleWrapper;
-        this.currentAccumulatedResponse = '';
-        let accumulatedResponse = '';
+        this.currentAccumulatedReasoning = '';
+        this.currentAccumulatedContent = '';
+        let accumulatedReasoning = '';
+        let accumulatedContent = '';
         let receivedExportIntent = null;
 
         try {
@@ -2088,11 +2129,19 @@ const Chat = {
                                 receivedExportIntent = parsed.export_intent;
                             }
 
-                            // 6. Handle Token Stream
+                            // 6. Handle Reasoning Stream
+                            if (parsed.reasoning) {
+                                accumulatedReasoning += parsed.reasoning;
+                                this.currentAccumulatedReasoning = accumulatedReasoning;
+                                contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, true);
+                                this.scrollToBottom();
+                            }
+
+                            // 7. Handle Token Stream
                             if (parsed.token) {
-                                accumulatedResponse += parsed.token;
-                                this.currentAccumulatedResponse = accumulatedResponse;
-                                contentEl.innerHTML = this.renderAssistantMessage(accumulatedResponse, true);
+                                accumulatedContent += parsed.token;
+                                this.currentAccumulatedContent = accumulatedContent;
+                                contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, false);
                                 this.highlightCode(contentEl);
                                 this.enhanceTablesAndMeters(contentEl);
                                 this.scrollToBottom();
@@ -2104,18 +2153,21 @@ const Chat = {
                 }
             }
 
-            if (accumulatedResponse.trim() && !asstBubbleWrapper.dataset.rawContent) {
-                contentEl.innerHTML = this.renderAssistantMessage(accumulatedResponse, false);
+            if ((accumulatedContent.trim() || accumulatedReasoning.trim()) && !asstBubbleWrapper.dataset.rawContent) {
+                contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, false);
                 
-                const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
+                const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedContent);
                 let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
                 if (!actionsContainer) {
                     actionsContainer = document.createElement('div');
                     actionsContainer.className = 'msg-actions-container w-full';
                     contentEl.parentNode.appendChild(actionsContainer);
                 }
-                actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedResponse, receivedExportIntent, hasTables);
-                asstBubbleWrapper.dataset.rawContent = accumulatedResponse;
+                actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedContent, receivedExportIntent, hasTables);
+                asstBubbleWrapper.dataset.rawContent = accumulatedContent;
+                if (accumulatedReasoning) {
+                    asstBubbleWrapper.dataset.rawReasoning = accumulatedReasoning;
+                }
 
                 this.highlightCode(contentEl);
                 this.enhanceTablesAndMeters(contentEl);
@@ -2124,18 +2176,21 @@ const Chat = {
         } catch (err) {
             this.hideQueuePopup(true);
             if (err.name === 'AbortError' || !this.isStreaming) {
-                if (accumulatedResponse.trim() && !asstBubbleWrapper.dataset.rawContent) {
-                    contentEl.innerHTML = this.renderAssistantMessage(accumulatedResponse, false);
+                if ((accumulatedContent.trim() || accumulatedReasoning.trim()) && !asstBubbleWrapper.dataset.rawContent) {
+                    contentEl.innerHTML = this.renderAssistantMessage(accumulatedReasoning, accumulatedContent, false);
                     
-                    const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedResponse);
+                    const hasTables = /\|(?:\s*:?-+:?\s*\|)+/.test(accumulatedContent);
                     let actionsContainer = asstBubbleWrapper.querySelector('.msg-actions-container');
                     if (!actionsContainer) {
                         actionsContainer = document.createElement('div');
                         actionsContainer.className = 'msg-actions-container w-full';
                         contentEl.parentNode.appendChild(actionsContainer);
                     }
-                    actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedResponse, receivedExportIntent, hasTables);
-                    asstBubbleWrapper.dataset.rawContent = accumulatedResponse;
+                    actionsContainer.innerHTML = this.buildMessageActionToolbar(accumulatedContent, receivedExportIntent, hasTables);
+                    asstBubbleWrapper.dataset.rawContent = accumulatedContent;
+                    if (accumulatedReasoning) {
+                        asstBubbleWrapper.dataset.rawReasoning = accumulatedReasoning;
+                    }
 
                     this.highlightCode(contentEl);
                     this.enhanceTablesAndMeters(contentEl);
@@ -2152,7 +2207,8 @@ const Chat = {
             this.activeReader = null;
             this.activeContentEl = null;
             this.activeBubbleWrapper = null;
-            this.currentAccumulatedResponse = '';
+            this.currentAccumulatedReasoning = '';
+            this.currentAccumulatedContent = '';
             if (contentEl) {
                 this.enhanceTablesAndMeters(contentEl);
             }

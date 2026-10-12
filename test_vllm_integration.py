@@ -122,13 +122,19 @@ async def test_vllm_reasoning_tokens_stream():
             pass
 
     with patch("httpx.AsyncClient.stream", return_value=MockStreamContext()):
-        tokens = []
+        reasoning_parts = []
+        token_parts = []
         async for chunk in service.stream_chat(messages=[{"role": "user", "content": "تحلیل"}], model="default"):
             data = json.loads(chunk)
-            tokens.append(data.get("token", ""))
+            if data.get("reasoning"):
+                reasoning_parts.append(data["reasoning"])
+            if data.get("token"):
+                token_parts.append(data["token"])
             
-        full_text = "".join(tokens)
-        assert "<think>" in full_text
-        assert "در حال محاسبه و بررسی دادها" in full_text
-        assert "</think>" in full_text
-        assert "پاسخ نهایی تحلیلی" in full_text
+        full_reasoning = "".join(reasoning_parts)
+        full_content = "".join(token_parts)
+        assert "در حال محاسبه و بررسی دادها" in full_reasoning
+        assert "پاسخ نهایی تحلیلی" in full_content
+        # Confirm they do not bleed into each other
+        assert "پاسخ نهایی تحلیلی" not in full_reasoning
+        assert "در حال محاسبه" not in full_content

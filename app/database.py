@@ -73,6 +73,7 @@ class ChatMessage(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
+    reasoning = Column(Text, nullable=True)
     has_attachment = Column(Boolean, default=False)
     attachment_name = Column(String(255), nullable=True)
     tokens = Column(Integer, default=0)
@@ -272,8 +273,11 @@ def migrate_schema():
 
         try:
             msg_cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(chat_messages)").fetchall()]
-            if msg_cols and "tokens" not in msg_cols:
-                conn.exec_driver_sql("ALTER TABLE chat_messages ADD COLUMN tokens INTEGER DEFAULT 0")
+            if msg_cols:
+                if "tokens" not in msg_cols:
+                    conn.exec_driver_sql("ALTER TABLE chat_messages ADD COLUMN tokens INTEGER DEFAULT 0")
+                if "reasoning" not in msg_cols:
+                    conn.exec_driver_sql("ALTER TABLE chat_messages ADD COLUMN reasoning TEXT")
         except Exception:
             pass
 

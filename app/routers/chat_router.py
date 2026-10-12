@@ -137,6 +137,7 @@ def get_session_details(
             "id": m.id,
             "role": m.role,
             "content": m.content,
+            "reasoning": getattr(m, "reasoning", None),
             "has_attachment": m.has_attachment,
             "attachment_name": m.attachment_name,
             "created_at": m.created_at.isoformat()
@@ -359,6 +360,7 @@ async def send_message(
 
     async def event_generator():
         full_response_text = []
+        full_reasoning_text = []
         try:
             # 5. Handle Queue Waiting & Acquire Slot
             async for queue_status in request_queue.acquire_slot(ticket_id):
@@ -370,7 +372,7 @@ async def send_message(
                     yield f"data: {json.dumps({'queue_status': 'active', 'message': queue_status['message']})}\n\n"
                     break
 
-            # 6. Stream Chat with Ollama
+            # 6. Stream Chat with LLM Service
             async for chunk_str in ollama_service.stream_chat(context_messages, model=active_model):
                 if await request.is_disconnected():
                     break
@@ -380,13 +382,19 @@ async def send_message(
                     yield f"data: {json.dumps({'error': chunk_data['error']})}\n\n"
                     break
                 
-                token = chunk_data.get("token", "")
+                reasoning = chunk_data.get("reasoning", "")
+                token = chunk_data.get("token") or chunk_data.get("content", "")
+
+                if reasoning:
+                    full_reasoning_text.append(reasoning)
+                    yield f"data: {json.dumps({'reasoning': reasoning, 'done': False}, ensure_ascii=False)}\n\n"
+
                 if token:
                     full_response_text.append(token)
-                    yield f"data: {json.dumps({'token': token, 'title': sess.title, 'done': False})}\n\n"
+                    yield f"data: {json.dumps({'token': token, 'title': sess.title, 'done': False}, ensure_ascii=False)}\n\n"
                 
                 if chunk_data.get("done", False):
-                    yield f"data: {json.dumps({'token': '', 'title': sess.title, 'done': True, 'export_intent': user_export_intent})}\n\n"
+                    yield f"data: {json.dumps({'token': '', 'title': sess.title, 'done': True, 'export_intent': user_export_intent}, ensure_ascii=False)}\n\n"
                     break
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -395,6 +403,7 @@ async def send_message(
 
         latency = int((time.time() - start_time) * 1000)
         final_text = "".join(full_response_text)
+        final_reasoning = "".join(full_reasoning_text).strip() if full_reasoning_text else None
 
         # 7. Save Assistant Message & Prompt Log & Calculate Daily Token Quota
         from app.database import SessionLocal
@@ -409,12 +418,13 @@ async def send_message(
                 check_and_reset_user_daily_tokens(db_user, bg_db)
                 db_user.tokens_used += total_tokens_consumed
 
-            if final_text.strip():
+            if final_text.strip() or final_reasoning:
                 asst_msg = ChatMessage(
                     session_id=sess.id,
                     user_id=user_id_val,
                     role="assistant",
                     content=final_text,
+                    reasoning=final_reasoning,
                     tokens=resp_tokens_est
                 )
                 bg_db.add(asst_msg)
