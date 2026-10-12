@@ -30,20 +30,28 @@ class LLMService:
         self._active_provider: str = self.provider
         self.cached_models: List[str] = []
 
+    def _get_vllm_headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        api_key = getattr(settings, "VLLM_API_KEY", "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        return headers
+
     async def check_health(self) -> bool:
         # 1. Check vLLM if configured or in auto mode
         if self.provider in ("vllm", "openai", "auto"):
+            headers = self._get_vllm_headers()
             try:
                 async with httpx.AsyncClient(timeout=3.0) as client:
                     try:
-                        res = await client.get(f"{self.vllm_base_url}/health")
+                        res = await client.get(f"{self.vllm_base_url}/health", headers=headers)
                         if res.status_code == 200:
                             self._active_provider = "vllm"
                             return True
                     except Exception:
                         pass
 
-                    res_models = await client.get(f"{self.vllm_base_url}/v1/models")
+                    res_models = await client.get(f"{self.vllm_base_url}/v1/models", headers=headers)
                     if res_models.status_code == 200:
                         self._active_provider = "vllm"
                         return True
@@ -66,9 +74,10 @@ class LLMService:
     async def list_models(self) -> List[str]:
         # 1. Query vLLM
         if self._active_provider in ("vllm", "openai") or self.provider in ("vllm", "openai", "auto"):
+            headers = self._get_vllm_headers()
             try:
                 async with httpx.AsyncClient(timeout=4.0) as client:
-                    res = await client.get(f"{self.vllm_base_url}/v1/models")
+                    res = await client.get(f"{self.vllm_base_url}/v1/models", headers=headers)
                     if res.status_code == 200:
                         data = res.json()
                         models = [m.get("id") for m in data.get("data", []) if m.get("id")]
@@ -227,17 +236,20 @@ class LLMService:
             "messages": messages,
             "stream": True,
             "temperature": 0.7,
-            "max_tokens": 4096
+            "max_tokens": getattr(settings, "MAX_OUTPUT_TOKENS", 8192)
         }
+        headers = self._get_vllm_headers()
+        timeout = httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=30.0)
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             try:
-                async with client.stream("POST", url, json=payload) as response:
+                async with client.stream("POST", url, json=payload, headers=headers) as response:
                     if response.status_code != 200:
                         err_text = await response.aread()
-                        yield json.dumps({"error": f"خطای سرور مدل vLLM ({response.status_code}): {err_text.decode('utf-8')}"})
+                        yield json.dumps({"error": f"خطای سرور مدل vLLM ({response.status_code}): {err_text.decode('utf-8')}"}, ensure_ascii=False)
                         return
 
+                    is_in_thinking = False
                     async for line in response.aiter_lines():
                         if not line:
                             continue
@@ -247,7 +259,10 @@ class LLMService:
                         if line_str.startswith("data: "):
                             line_str = line_str[6:].strip()
                         if line_str == "[DONE]":
-                            yield json.dumps({"token": "", "done": True})
+                            if is_in_thinking:
+                                yield json.dumps({"token": "\n</think>\n\n", "done": False}, ensure_ascii=False)
+                                is_in_thinking = False
+                            yield json.dumps({"token": "", "done": True}, ensure_ascii=False)
                             break
                         try:
                             chunk = json.loads(line_str)
@@ -255,16 +270,31 @@ class LLMService:
                             if not choices:
                                 continue
                             delta = choices[0].get("delta", {})
-                            msg_chunk = delta.get("content", "")
+                            msg_chunk = delta.get("content")
+                            reasoning_chunk = delta.get("reasoning_content") or delta.get("reasoning")
                             finish_reason = choices[0].get("finish_reason")
                             is_done = finish_reason is not None
 
+                            # Handle reasoning/thinking tokens from vLLM --reasoning-parser
+                            if reasoning_chunk:
+                                if not is_in_thinking:
+                                    yield json.dumps({"token": "<think>\n", "done": False}, ensure_ascii=False)
+                                    is_in_thinking = True
+                                yield json.dumps({"token": reasoning_chunk, "done": False}, ensure_ascii=False)
+
                             if msg_chunk:
+                                if is_in_thinking:
+                                    yield json.dumps({"token": "\n</think>\n\n", "done": False}, ensure_ascii=False)
+                                    is_in_thinking = False
                                 yield json.dumps({
                                     "token": msg_chunk,
                                     "done": False
                                 }, ensure_ascii=False)
+
                             if is_done:
+                                if is_in_thinking:
+                                    yield json.dumps({"token": "\n</think>\n\n", "done": False}, ensure_ascii=False)
+                                    is_in_thinking = False
                                 yield json.dumps({
                                     "token": "",
                                     "done": True

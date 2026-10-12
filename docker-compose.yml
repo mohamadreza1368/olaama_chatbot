@@ -24,10 +24,12 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - ENVIRONMENT=production
-      # تنظیمات سرویس زبانی (vLLM روی پورت 8005 / Ollama روی 11434)
+      # تنظیمات سرویس زبانی (vLLM روی پورت 8005 یا gateway روی 8080 / Ollama روی 11434)
       - LLM_PROVIDER=${LLM_PROVIDER:-vllm}
-      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://0.0.0.0:8005}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://0.0.0.0:11434}
+      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://127.0.0.1:8005}
+      - VLLM_API_KEY=${VLLM_API_KEY:-}
+      - MAX_OUTPUT_TOKENS=${MAX_OUTPUT_TOKENS:-8192}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://127.0.0.1:11434}
       - DEFAULT_MODEL=${DEFAULT_MODEL:-default}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-super-secret-jwt-key-change-in-production-2026}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}

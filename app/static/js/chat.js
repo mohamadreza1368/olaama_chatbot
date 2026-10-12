@@ -823,7 +823,40 @@ const Chat = {
 
     formatVisualElements(html) {
         if (!html) return '';
-        // Format inline ASCII progress bars [████░░░░] 80% in regular text
+
+        // 1. Transform completed <think>...</think> into an attractive collapsible accordion
+        html = html.replace(/<think>([\s\S]*?)<\/think>/gi, (match, thought) => {
+            const cleanThought = thought.trim();
+            if (!cleanThought) return '';
+            return `
+                <details class="my-2 p-3 rounded-xl bg-gray-100/90 dark:bg-[#252525]/90 border border-gray-200 dark:border-gray-700/60 text-xs text-gray-600 dark:text-gray-300">
+                    <summary class="cursor-pointer font-medium text-gray-500 dark:text-gray-400 flex items-center gap-1.5 select-none hover:text-emerald-500 transition-colors">
+                        <i data-lucide="brain" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>فرایند استدلال و تفکر مدل</span>
+                    </summary>
+                    <div class="mt-2.5 pt-2 border-t border-gray-200 dark:border-gray-700/50 whitespace-pre-wrap leading-relaxed opacity-90 text-[11px] font-sans">
+                        ${cleanThought}
+                    </div>
+                </details>
+            `;
+        });
+
+        // 2. Transform active (unclosed) <think> during live streaming
+        html = html.replace(/<think>([\s\S]*)$/gi, (match, thought) => {
+            return `
+                <details open class="my-2 p-3 rounded-xl bg-emerald-50/50 dark:bg-[#1f2824]/60 border border-emerald-500/30 text-xs text-gray-600 dark:text-gray-300">
+                    <summary class="cursor-pointer font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 select-none">
+                        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping ml-1"></span>
+                        <span>در حال تحلیل و پردازش استدلال...</span>
+                    </summary>
+                    <div class="mt-2.5 pt-2 border-t border-emerald-200/50 dark:border-emerald-800/40 whitespace-pre-wrap leading-relaxed opacity-90 text-[11px] font-sans">
+                        ${thought.trim()}
+                    </div>
+                </details>
+            `;
+        });
+
+        // 3. Format inline ASCII progress bars [████░░░░] 80% in regular text
         return html.replace(/\[([█■#=]{2,}[░□\-_ ]{1,})\]\s*(\(?(\d+(?:\.\d+)?%)\)?)?/g, (match, bar, p2, pct) => {
             const filled = (bar.match(/[█■#=]/g) || []).length;
             const total = bar.length;

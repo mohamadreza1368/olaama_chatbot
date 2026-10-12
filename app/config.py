@@ -38,12 +38,14 @@ class Settings(BaseModel):
 
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "vllm").lower()
 
-    _raw_vllm = os.getenv("VLLM_BASE_URL", os.getenv("LLM_BASE_URL", "http://0.0.0.0:8005"))
+    _raw_vllm = os.getenv("VLLM_BASE_URL", os.getenv("LLM_BASE_URL", "http://127.0.0.1:8005"))
     VLLM_BASE_URL: str = _raw_vllm if _raw_vllm.startswith(("http://", "https://")) else f"http://{_raw_vllm}"
+    VLLM_API_KEY: str = os.getenv("VLLM_API_KEY", "")
 
-    _raw_ollama = os.getenv("OLLAMA_BASE_URL", "http://0.0.0.0:11434")
+    _raw_ollama = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     OLLAMA_BASE_URL: str = _raw_ollama if _raw_ollama.startswith(("http://", "https://")) else f"http://{_raw_ollama}"
     DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "default")
+    MAX_OUTPUT_TOKENS: int = int(os.getenv("MAX_OUTPUT_TOKENS", "8192"))
 
     # Admin credentials - supports both ADMIN_USERNAME and DEFAULT_ADMIN_USERNAME
     DEFAULT_ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", os.getenv("DEFAULT_ADMIN_USERNAME", "admin"))

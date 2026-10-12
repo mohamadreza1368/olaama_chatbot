@@ -93,3 +93,42 @@ def test_database_get_system_model_vllm_migration():
             assert model == settings.DEFAULT_MODEL
     finally:
         db.close()
+
+@pytest.mark.anyio
+async def test_vllm_reasoning_tokens_stream():
+    service = LLMService(base_url="http://127.0.0.1:8005", provider="vllm")
+    service.cached_models = ["Qwen/Qwen3.8-27B-FP8"]
+    
+    # Mock SSE stream lines containing reasoning_content followed by content
+    sse_lines = [
+        'data: {"choices": [{"delta": {"reasoning_content": "در حال محاسبه"}}]}',
+        'data: {"choices": [{"delta": {"reasoning_content": " و بررسی دادها"}}]}',
+        'data: {"choices": [{"delta": {"content": "پاسخ نهایی تحلیلی"}}]}',
+        'data: {"choices": [{"delta": {}, "finish_reason": "stop"}]}'
+    ]
+    
+    async def mock_aiter_lines():
+        for line in sse_lines:
+            yield line
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.aiter_lines = mock_aiter_lines
+
+    class MockStreamContext:
+        async def __aenter__(self):
+            return mock_response
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    with patch("httpx.AsyncClient.stream", return_value=MockStreamContext()):
+        tokens = []
+        async for chunk in service.stream_chat(messages=[{"role": "user", "content": "تحلیل"}], model="default"):
+            data = json.loads(chunk)
+            tokens.append(data.get("token", ""))
+            
+        full_text = "".join(tokens)
+        assert "<think>" in full_text
+        assert "در حال محاسبه و بررسی دادها" in full_text
+        assert "</think>" in full_text
+        assert "پاسخ نهایی تحلیلی" in full_text
