@@ -2468,7 +2468,7 @@ const Chat = {
     scrollToUserMessage(targetId) {
         const targetEl = document.getElementById(targetId);
         if (!targetEl) return;
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
         const bubble = targetEl.querySelector('.user-msg-bubble') || targetEl;
         bubble.classList.remove('user-message-highlight');
@@ -2494,22 +2494,27 @@ const Chat = {
 
         let activeMsgId = forcedTargetId;
         if (!activeMsgId) {
-            const containerRect = container.getBoundingClientRect();
-            const referenceY = containerRect.top + 80;
+            // Check if user has scrolled near or at the bottom of the container
+            const isAtBottom = (container.scrollTop + container.clientHeight >= container.scrollHeight - 60);
+            if (isAtBottom) {
+                activeMsgId = userMsgs[userMsgs.length - 1].id;
+            } else {
+                const containerRect = container.getBoundingClientRect();
+                // A comfortable reading viewport line: 35% from the container top
+                const referenceY = containerRect.top + (containerRect.height * 0.35);
 
-            let closestDiff = Infinity;
-            activeMsgId = userMsgs[0].id;
-
-            userMsgs.forEach(el => {
-                const rect = el.getBoundingClientRect();
-                const diff = Math.abs(rect.top - referenceY);
-                if (rect.top <= containerRect.bottom && rect.bottom >= containerRect.top) {
-                    if (diff < closestDiff) {
-                        closestDiff = diff;
+                // Find the latest user message whose top is at or above referenceY
+                activeMsgId = userMsgs[0].id;
+                for (let i = 0; i < userMsgs.length; i++) {
+                    const el = userMsgs[i];
+                    const rect = el.getBoundingClientRect();
+                    if (rect.top <= referenceY) {
                         activeMsgId = el.id;
+                    } else {
+                        break;
                     }
                 }
-            });
+            }
         }
 
         const navItems = navContainer.querySelectorAll('.question-nav-item');

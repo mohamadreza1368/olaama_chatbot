@@ -618,7 +618,7 @@ button {
    QUESTION TIMELINE NAVIGATOR (GEMINI / CHATGPT STYLE)
    ============================================================ */
 #questions-nav-container {
-    transition: opacity 0.3s ease, transform 0.3s ease;
+    transition: opacity 0.2s ease;
 }
 
 #questions-nav-track {
@@ -635,9 +635,12 @@ button {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 3px 2px;
+    width: 28px;
+    height: 18px;
+    padding: 0;
     cursor: pointer;
     user-select: none;
+    box-sizing: border-box;
 }
 
 .question-nav-pill {
@@ -645,7 +648,7 @@ button {
     height: 3.5px;
     border-radius: 9999px;
     background-color: rgba(156, 163, 175, 0.45);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .dark .question-nav-pill {
@@ -663,7 +666,7 @@ button {
 
 .question-nav-item.active .question-nav-pill {
     width: 22px;
-    height: 4.5px;
+    height: 3.5px;
     background-color: #3b82f6 !important; /* Gemini blue */
     box-shadow: 0 0 10px rgba(59, 130, 246, 0.7);
 }
