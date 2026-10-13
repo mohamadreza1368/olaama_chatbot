@@ -160,6 +160,12 @@
                             </button>
                         </div>
                     </div>
+
+                    <!-- Delete Current Session Button -->
+                    <button id="btn-delete-current-session" type="button" onclick="Chat.deleteCurrentSession()" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2a2a2a] hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:border-rose-300 dark:hover:border-rose-800 text-gray-500 hover:text-rose-600 dark:text-gray-400 dark:hover:text-rose-400 text-xs transition shadow-sm cursor-pointer" title="حذف این گفتگو">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        <span class="hidden sm:inline text-[11px] font-medium">حذف</span>
+                    </button>
                 </div>
             </header>
 
@@ -185,8 +191,8 @@
             </div>
 
             <!-- Floating Question Timeline Navigator (Gemini / ChatGPT Style) -->
-            <aside id="questions-nav-container" class="hidden md:flex flex-col items-center absolute right-3.5 top-1/2 -translate-y-1/2 z-20 pointer-events-auto select-none opacity-80 hover:opacity-100 transition-opacity duration-200" aria-label="راهنمای سوالات گفتگو">
-                <div id="questions-nav-track" class="flex flex-col items-center gap-2 py-3 px-1.5 rounded-full bg-gray-900/60 dark:bg-black/70 hover:bg-gray-900/90 dark:hover:bg-black/90 backdrop-blur-md border border-gray-700/40 dark:border-gray-800 shadow-xl transition-colors duration-200">
+            <aside id="questions-nav-container" class="hidden md:flex flex-col items-center absolute right-2.5 top-1/2 -translate-y-1/2 z-20 pointer-events-auto select-none" aria-label="راهنمای سوالات گفتگو">
+                <div id="questions-nav-track" class="flex flex-col items-center gap-1.5">
                     <!-- Dynamic Question Indicator Pills inserted by JS -->
                 </div>
             </aside>

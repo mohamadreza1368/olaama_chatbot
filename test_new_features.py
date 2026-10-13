@@ -126,5 +126,46 @@ class TestAdvancedFeaturesAndQueue(unittest.TestCase):
             self.assertIn("بخش اداری", reset_data["system_prompt"])
             print("[PASS] Reference Prompts CRUD & Reset verified successfully")
 
+    def test_06_soft_delete_session(self):
+        from app.database import SessionLocal, ChatSession
+        with TestClient(app) as client:
+            login_res = client.post("/api/auth/login", json={
+                "username": settings.DEFAULT_ADMIN_USERNAME,
+                "password": settings.DEFAULT_ADMIN_PASSWORD
+            })
+            token = login_res.json()["access_token"]
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # 1. Create a session
+            create_res = client.post("/api/chat/sessions", headers=headers, json={"title": "Session to Soft Delete"})
+            self.assertEqual(create_res.status_code, 200)
+            sess_id = create_res.json()["id"]
+
+            # 2. Verify it shows in GET /sessions
+            list_res = client.get("/api/chat/sessions", headers=headers)
+            self.assertTrue(any(s["id"] == sess_id for s in list_res.json()))
+
+            # 3. Soft delete the session
+            del_res = client.delete(f"/api/chat/sessions/{sess_id}", headers=headers)
+            self.assertEqual(del_res.status_code, 200)
+
+            # 4. Verify it no longer appears in GET /sessions
+            list_res_after = client.get("/api/chat/sessions", headers=headers)
+            self.assertFalse(any(s["id"] == sess_id for s in list_res_after.json()))
+
+            # 5. Verify direct details GET returns 404
+            get_detail = client.get(f"/api/chat/sessions/{sess_id}", headers=headers)
+            self.assertEqual(get_detail.status_code, 404)
+
+            # 6. Verify in the database that the record STILL EXISTS with is_deleted=True
+            db = SessionLocal()
+            try:
+                db_sess = db.query(ChatSession).filter(ChatSession.id == sess_id).first()
+                self.assertIsNotNone(db_sess)
+                self.assertTrue(db_sess.is_deleted)
+                print("[PASS] Session Soft Delete verified: hidden from UI, preserved in DB")
+            finally:
+                db.close()
+
 if __name__ == "__main__":
     unittest.main()

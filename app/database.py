@@ -60,6 +60,7 @@ class ChatSession(Base):
     system_prompt = Column(Text, default="", nullable=True)
     model_name = Column(String(100), default="qwen:0.5b", nullable=False)
     conversation_summary = Column(Text, nullable=True)
+    is_deleted = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
 
@@ -284,8 +285,11 @@ def migrate_schema():
 
         try:
             sess_cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(chat_sessions)").fetchall()]
-            if sess_cols and "conversation_summary" not in sess_cols:
-                conn.exec_driver_sql("ALTER TABLE chat_sessions ADD COLUMN conversation_summary TEXT")
+            if sess_cols:
+                if "conversation_summary" not in sess_cols:
+                    conn.exec_driver_sql("ALTER TABLE chat_sessions ADD COLUMN conversation_summary TEXT")
+                if "is_deleted" not in sess_cols:
+                    conn.exec_driver_sql("ALTER TABLE chat_sessions ADD COLUMN is_deleted BOOLEAN DEFAULT 0")
         except Exception:
             pass
 

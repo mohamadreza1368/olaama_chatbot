@@ -106,7 +106,10 @@ def get_active_skills_chat(db: Session = Depends(get_db), current_user: User = D
 def get_sessions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     sessions = (
         db.query(ChatSession)
-        .filter(ChatSession.user_id == current_user.id)
+        .filter(
+            ChatSession.user_id == current_user.id,
+            (ChatSession.is_deleted == False) | (ChatSession.is_deleted.is_(None))
+        )
         .order_by(ChatSession.updated_at.desc())
         .all()
     )
@@ -158,7 +161,8 @@ def get_session_details(
     session_id = security_service.validate_session_id(session_id)
     sess = db.query(ChatSession).filter(
         ChatSession.id == session_id,
-        ChatSession.user_id == current_user.id
+        ChatSession.user_id == current_user.id,
+        (ChatSession.is_deleted == False) | (ChatSession.is_deleted.is_(None))
     ).first()
     if not sess:
         raise HTTPException(status_code=404, detail="Chat session not found")
@@ -197,7 +201,8 @@ def update_session(
     session_id = security_service.validate_session_id(session_id)
     sess = db.query(ChatSession).filter(
         ChatSession.id == session_id,
-        ChatSession.user_id == current_user.id
+        ChatSession.user_id == current_user.id,
+        (ChatSession.is_deleted == False) | (ChatSession.is_deleted.is_(None))
     ).first()
     if not sess:
         raise HTTPException(status_code=404, detail="Chat session not found")
@@ -220,14 +225,17 @@ def delete_session(
     session_id = security_service.validate_session_id(session_id)
     sess = db.query(ChatSession).filter(
         ChatSession.id == session_id,
-        ChatSession.user_id == current_user.id
+        ChatSession.user_id == current_user.id,
+        (ChatSession.is_deleted == False) | (ChatSession.is_deleted.is_(None))
     ).first()
     if not sess:
         raise HTTPException(status_code=404, detail="Chat session not found")
     
-    db.delete(sess)
+    # Soft delete: mark is_deleted=True so it vanishes from user UI, while retaining all history in database
+    sess.is_deleted = True
+    sess.updated_at = datetime.datetime.utcnow()
     db.commit()
-    return {"message": "Session deleted successfully"}
+    return {"message": "Session deleted successfully", "id": session_id}
 
 @router.post("/send")
 async def send_message(
@@ -300,7 +308,8 @@ async def send_message(
     global_system_prompt = get_system_prompt(db)
     sess = db.query(ChatSession).filter(
         ChatSession.id == session_id,
-        ChatSession.user_id == current_user.id
+        ChatSession.user_id == current_user.id,
+        (ChatSession.is_deleted == False) | (ChatSession.is_deleted.is_(None))
     ).first()
 
     if not sess:
@@ -574,7 +583,8 @@ def handle_export(
             session_id = security_service.validate_session_id(session_id)
             sess = db.query(ChatSession).filter(
                 ChatSession.id == session_id,
-                ChatSession.user_id == current_user.id
+                ChatSession.user_id == current_user.id,
+                (ChatSession.is_deleted == False) | (ChatSession.is_deleted.is_(None))
             ).first()
             if not sess:
                 raise HTTPException(status_code=404, detail="گفتگوی مورد نظر یافت نشد.")

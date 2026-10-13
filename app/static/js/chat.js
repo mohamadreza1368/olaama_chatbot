@@ -1742,11 +1742,19 @@ const Chat = {
                 } else {
                     this.renderSessionsList();
                 }
+                this.updateQuestionsNav();
                 App.toast('گفتگو با موفقیت حذف شد', 'info');
+            } else {
+                App.toast('خطا در حذف گفتگو', 'error');
             }
         } catch (e) {
             App.toast('خطا در حذف گفتگو', 'error');
         }
+    },
+
+    deleteCurrentSession() {
+        if (!this.currentSessionId) return;
+        this.deleteSession(this.currentSessionId);
     },
 
     appendMessage(role, content, hasAttachment = false, attachmentName = '', reasoning = null) {
