@@ -2440,9 +2440,45 @@ const Chat = {
         }
     },
 
+    isDownloadableContent(content, exportIntent = null) {
+        if (!content || typeof content !== 'string') return false;
+
+        // 1. Explicit user export intent (user requested docx/xlsx)
+        if (exportIntent === 'docx' || exportIntent === 'xlsx' || exportIntent === 'both') {
+            return true;
+        }
+
+        // 2. Formal Letter / Official Document Template
+        const hasLetterPattern = /(?:پیش‌نویس\s*نامه|نامه\s*اداری|شماره\s*نامه|پیرو\s*نامه|عطف\s*به|جناب\s*آقای|سرکار\s*خانم|ریاست\s*محترم|مدیریت\s*محترم|با\s*احترام|احتراماً|رونوشت\s*:|صورتجلسه|دستور\s*جلسه)/.test(content);
+        if (hasLetterPattern && content.length > 140) {
+            return true;
+        }
+
+        // 3. Statistical Analysis / Financial Report with Charts or Substantial Tables
+        const hasAnalyticalPattern = /(?:گزارش\s*تحلیلی|تحلیل\s*آماری|شاخص‌های\s*کلیدی|تحلیل\s*داده‌ها|آمار\s*معاملات|ترازنامه|بودجه|صورت\s*مالی|گزارش\s*عملکرد)/.test(content);
+        const hasChart = /```chart[\s\S]*?```/.test(content);
+
+        // Count markdown table rows
+        const tableLines = content.split('\n').filter(line => /^\|.*\|$/.test(line.trim()));
+        const hasSubstantialTable = tableLines.length >= 5; // Header + separator + at least 3 data rows
+
+        if (hasAnalyticalPattern && (hasChart || hasSubstantialTable)) {
+            return true;
+        }
+
+        // 4. Large tabular data dataset on its own (at least 6 rows)
+        if (tableLines.length >= 6) {
+            return true;
+        }
+
+        return false;
+    },
+
     buildMessageActionToolbar(content, exportIntent = null, hasTables = false) {
         let downloadCardHtml = '';
-        if (exportIntent || hasTables) {
+        const shouldShowDownloadCard = this.isDownloadableContent(content, exportIntent);
+
+        if (shouldShowDownloadCard) {
             const subtitle = exportIntent === 'xlsx' 
                 ? 'فایل اکسل آماده دانلود و استفاده در نرم‌افزار Excel است.'
                 : (exportIntent === 'docx' 

@@ -510,25 +510,21 @@ def detect_export_intent(text: str) -> Optional[str]:
     if not text:
         return None
     
-    is_export_context = bool(re.search(r'(?:فایل|خروجی|دانلود|نسخه|قالب|دریافت|بده|بفرست|میخوام|می‌خوام|export|download)', text, re.IGNORECASE))
+    clean_text = text.strip()
     
-    has_word = bool(re.search(r'(?:ورد|وورد|word|docx)', text, re.IGNORECASE))
-    has_excel = bool(re.search(r'(?:اکسل|excel|xlsx|شیت)', text, re.IGNORECASE))
+    has_word = bool(re.search(r'(?:ورد|وورد|word|docx)', clean_text, re.IGNORECASE))
+    has_excel = bool(re.search(r'(?:اکسل|excel|xlsx|شیت)', clean_text, re.IGNORECASE))
+    
+    # Check if there is an explicit request for export/file/download/template
+    is_export_request = bool(re.search(r'(?:فایل|خروجی|دانلود|نسخه|قالب|در\s*قالب|به\s*صورت\s*فایل|export|download)', clean_text, re.IGNORECASE)) or \
+                         bool(re.search(r'(?:ورد|وورد|word|docx|اکسل|excel|xlsx)\s*(?:بده|بفرست|دانلود|خروجی|آماده\s*کن|تولید\s*کن|می‌خواهم|میخوام)', clean_text, re.IGNORECASE))
 
-    if is_export_context:
+    if is_export_request:
         if has_word and has_excel:
             return 'both'
-        elif has_word:
+        if has_word:
             return 'docx'
-        elif has_excel:
+        if has_excel:
             return 'xlsx'
-            
-    # Direct explicit mentions like 'فایل ورد' or 'فایل اکسل'
-    if has_word and has_excel:
-        return 'both'
-    if re.search(r'(?:فایل|خروجی|دانلود)\s*(?:ورد|وورد|word|docx)', text, re.IGNORECASE):
-        return 'docx'
-    if re.search(r'(?:فایل|خروجی|دانلود)\s*(?:اکسل|excel|xlsx)', text, re.IGNORECASE):
-        return 'xlsx'
-        
+
     return None
