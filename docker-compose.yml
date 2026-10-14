@@ -8,7 +8,9 @@ services:
       args:
         DOCKER_MIRROR: ${DOCKER_MIRROR:-dockerhub.ime.co.ir/}
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://linux.repo.ime.co.ir/repository/debian}
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.repo.ime.co.ir/repository/pypi-group/simple/}
+        PIP_EXTRA_INDEX_URL: ${PIP_EXTRA_INDEX_URL:-https://linux.repo.ime.co.ir/repository/pypi/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.repo.ime.co.ir linux.repo.ime.co.ir}
     container_name: ime_ollama_chatbot
     restart: unless-stopped
     env_file:

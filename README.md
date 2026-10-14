@@ -154,6 +154,10 @@ Deploy the application effortlessly in an isolated, production-ready container.
    - در فایل `.env`: متغیر `DEBIAN_MIRROR=https://linux.repo.ime.co.ir/repository/debian`
    - دستور `apt-get update` و نصب پیش‌نیازها در `Dockerfile` به صورت خودکار به این مخزن داخلی هدایت می‌شود.
 
+3. **مخزن پکیج‌های پایتون (`pypi.repo.ime.co.ir`)**:
+   - در فایل `.env` و `Dockerfile`: متغیرهای `PIP_INDEX_URL` و `PIP_EXTRA_INDEX_URL` و `PIP_TRUSTED_HOST`
+   - دانلود پکیج‌های پایتون (`pip install`) بدون تایم‌اوت و بدون نیاز به اینترنت آزاد بین‌الملل از مخزن گروهی داخلی انجام می‌شود.
+
 همچنین می‌توانید داکر میرور را به صورت سراسری در تنظیمات داکر (`daemon.json` یا Docker Desktop -> Settings -> Docker Engine) اعمال کنید:
 ```json
 {

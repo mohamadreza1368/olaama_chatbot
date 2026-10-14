@@ -37,13 +37,20 @@ RUN if [ -n "$DEBIAN_MIRROR" ]; then \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies (cached layer)
-ARG PIP_INDEX_URL=""
+ARG PIP_INDEX_URL=https://pypi.repo.ime.co.ir/repository/pypi-group/simple/
+ARG PIP_EXTRA_INDEX_URL=https://linux.repo.ime.co.ir/repository/pypi/simple
+ARG PIP_TRUSTED_HOST="pypi.repo.ime.co.ir linux.repo.ime.co.ir"
 COPY requirements.txt /app/requirements.txt
 RUN if [ -n "$PIP_INDEX_URL" ]; then \
-        pip config set global.index-url "$PIP_INDEX_URL" && \
-        pip config set global.trusted-host "$(echo "$PIP_INDEX_URL" | awk -F/ '{print $3}' | cut -d: -f1)"; \
+        pip config set global.index-url "$PIP_INDEX_URL"; \
     fi && \
-    pip install --no-cache-dir -r requirements.txt
+    if [ -n "$PIP_EXTRA_INDEX_URL" ]; then \
+        pip config set global.extra-index-url "$PIP_EXTRA_INDEX_URL"; \
+    fi && \
+    if [ -n "$PIP_TRUSTED_HOST" ]; then \
+        pip config set global.trusted-host "$PIP_TRUSTED_HOST"; \
+    fi && \
+    pip install --no-cache-dir --default-timeout=120 --retries 5 -r requirements.txt
 
 # Copy Application Code & Assets
 COPY app /app/app
