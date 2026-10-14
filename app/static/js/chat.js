@@ -1643,15 +1643,15 @@ const Chat = {
                     </div>
 
                     <!-- Floating Action Popover on Hover -->
-                    <div class="session-actions-popover opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center gap-0.5 transition-all duration-150 shrink-0">
-                        <button type="button" class="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 ${isPinned ? 'text-amber-500' : 'text-gray-400 hover:text-amber-500'} transition cursor-pointer" onclick="Chat.togglePinSession('${s.id}', event)" title="${isPinned ? 'برداشتن سنجاق' : 'سنجاق کردن به اول لیست'}">
-                            <i data-lucide="pin" class="w-3.5 h-3.5 ${isPinned ? 'fill-amber-500/40 text-amber-500' : ''}"></i>
+                    <div class="session-actions-popover" onclick="event.stopPropagation()">
+                        <button type="button" class="session-action-btn ${isPinned ? 'text-amber-500 bg-amber-500/15 dark:bg-amber-500/20' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40'}" onclick="Chat.togglePinSession('${s.id}', event)" title="${isPinned ? 'برداشتن سنجاق (Unpin)' : 'سنجاق کردن به اول لیست (Pin to top)'}">
+                            <i data-lucide="pin" class="w-3.5 h-3.5 ${isPinned ? 'fill-amber-500/50 rotate-45' : ''}"></i>
                         </button>
-                        <button type="button" class="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-500 transition cursor-pointer" onclick="Chat.promptRenameSession('${s.id}', '${escapedJsTitle}', event)" title="تغییر نام">
+                        <button type="button" class="session-action-btn text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40" onclick="Chat.promptRenameSession('${s.id}', '${escapedJsTitle}', event)" title="تغییر نام">
                             <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
                         </button>
-                        <button type="button" class="p-1 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/50 text-gray-400 hover:text-rose-500 transition cursor-pointer" onclick="Chat.openDeleteModal('${s.id}', '${escapedJsTitle}', event)" title="حذف گفتگو">
-                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        <button type="button" class="session-action-btn text-gray-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40" onclick="Chat.openDeleteModal('${s.id}', '${escapedJsTitle}', event)" title="حذف گفتگو (Delete)">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-500"></i>
                         </button>
                     </div>
                 </div>
@@ -1785,9 +1785,15 @@ const Chat = {
     },
 
     openDeleteModal(sessionId = null, sessionTitle = null, event = null) {
-        if (event) event.stopPropagation();
-        const targetId = sessionId || this.currentSessionId;
-        if (!targetId) return;
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        const targetId = sessionId || this.currentSessionId || (this.sessions && this.sessions.length > 0 ? this.sessions[0].id : null);
+        if (!targetId) {
+            App.toast('هیچ گفتگویی برای حذف وجود ندارد', 'warning');
+            return;
+        }
 
         this.pendingDeleteSessionId = targetId;
         let title = sessionTitle;
@@ -1804,6 +1810,7 @@ const Chat = {
         const modal = document.getElementById('session-delete-modal');
         if (modal) {
             modal.classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
         }
     },
 
