@@ -110,7 +110,7 @@ def get_sessions(db: Session = Depends(get_db), current_user: User = Depends(get
             ChatSession.user_id == current_user.id,
             (ChatSession.is_deleted == False) | (ChatSession.is_deleted.is_(None))
         )
-        .order_by(ChatSession.updated_at.desc())
+        .order_by(ChatSession.is_pinned.desc(), ChatSession.updated_at.desc())
         .all()
     )
     return [
@@ -118,6 +118,7 @@ def get_sessions(db: Session = Depends(get_db), current_user: User = Depends(get
             "id": s.id,
             "title": s.title,
             "model_name": s.model_name,
+            "is_pinned": bool(getattr(s, "is_pinned", False)),
             "created_at": s.created_at.isoformat(),
             "updated_at": s.updated_at.isoformat(),
             "message_count": len(s.messages)
@@ -186,6 +187,7 @@ def get_session_details(
         "model_name": sess.model_name,
         "system_prompt": sess.system_prompt,
         "conversation_summary": getattr(sess, "conversation_summary", None),
+        "is_pinned": bool(getattr(sess, "is_pinned", False)),
         "created_at": sess.created_at.isoformat(),
         "messages": messages
     }
@@ -215,6 +217,26 @@ def update_session(
     sess.updated_at = datetime.datetime.utcnow()
     db.commit()
     return {"message": "Session updated", "id": sess.id, "title": sess.title}
+
+@router.post("/sessions/{session_id}/pin")
+def toggle_pin_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    session_id = security_service.validate_session_id(session_id)
+    sess = db.query(ChatSession).filter(
+        ChatSession.id == session_id,
+        ChatSession.user_id == current_user.id,
+        (ChatSession.is_deleted == False) | (ChatSession.is_deleted.is_(None))
+    ).first()
+    if not sess:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    sess.is_pinned = not bool(getattr(sess, "is_pinned", False))
+    sess.updated_at = datetime.datetime.utcnow()
+    db.commit()
+    return {"id": sess.id, "is_pinned": sess.is_pinned, "message": "سنجاق شد" if sess.is_pinned else "سنجاق برداشته شد"}
 
 @router.delete("/sessions/{session_id}")
 def delete_session(

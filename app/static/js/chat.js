@@ -75,6 +75,7 @@ const Chat = {
     activeBubbleWrapper: null,
     currentAccumulatedResponse: '',
     chartInstances: {},
+    pendingDeleteSessionId: null,
 
     toPersianDigits(str) {
         if (str === null || str === undefined) return '';
@@ -1346,6 +1347,21 @@ const Chat = {
             }
         });
 
+        // Close session delete modal on backdrop click or Escape
+        const deleteModal = document.getElementById('session-delete-modal');
+        if (deleteModal) {
+            deleteModal.addEventListener('click', (e) => {
+                if (e.target === deleteModal) {
+                    this.closeDeleteModal();
+                }
+            });
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeDeleteModal();
+            }
+        });
+
         document.querySelectorAll('.quick-prompt-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const p = btn.getAttribute('data-prompt') || btn.innerText.replace(/^[💡💻📄]/, '').trim();
@@ -1595,24 +1611,47 @@ const Chat = {
             return;
         }
 
+        // Sort: pinned sessions at the very top, then by updated_at descending
+        this.sessions.sort((a, b) => {
+            const aPin = a.is_pinned ? 1 : 0;
+            const bPin = b.is_pinned ? 1 : 0;
+            if (aPin !== bPin) return bPin - aPin;
+            return new Date(b.updated_at) - new Date(a.updated_at);
+        });
+
         listEl.innerHTML = this.sessions.map(s => {
             const isActive = s.id === this.currentSessionId;
+            const isPinned = Boolean(s.is_pinned);
             const activeClasses = isActive 
-                ? 'bg-gray-200 dark:bg-[#282828] text-gray-900 dark:text-white font-medium' 
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#202020]';
+                ? 'bg-blue-500/10 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold border-blue-500/30 dark:border-blue-500/40 shadow-xs' 
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100/90 dark:hover:bg-[#252528] border-transparent';
             
+            const cleanTitle = (s.title || 'گفتگوی بدون نام').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const escapedJsTitle = (s.title || 'گفتگوی بدون نام').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+            const pinBadge = isPinned 
+                ? `<span class="inline-flex items-center text-amber-500 shrink-0" title="سنجاق‌شده به اول لیست">
+                       <i data-lucide="pin" class="w-3.5 h-3.5 fill-amber-500/40 rotate-45 text-amber-500"></i>
+                   </span>`
+                : '';
+
             return `
-                <div class="session-item group flex items-center justify-between px-3 py-2 rounded-xl text-xs cursor-pointer transition-all ${activeClasses}" data-id="${s.id}">
-                    <div class="flex items-center gap-2 overflow-hidden flex-1" onclick="Chat.switchSession('${s.id}')">
-                        <i data-lucide="message-square" class="w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-emerald-500' : 'text-gray-400'}"></i>
-                        <span class="truncate session-title">${s.title || 'گفتگوی بدون نام'}</span>
+                <div class="session-item group relative flex items-center justify-between px-2.5 py-2 rounded-xl text-xs cursor-pointer border transition-all ${activeClasses}" data-id="${s.id}">
+                    <div class="flex items-center gap-2 overflow-hidden flex-1 select-none" onclick="Chat.switchSession('${s.id}')">
+                        ${pinBadge || `<i data-lucide="message-square" class="w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-blue-500' : 'text-gray-400'}"></i>`}
+                        <span class="truncate session-title text-right">${cleanTitle}</span>
                     </div>
-                    <div class="items-center gap-1 hidden group-hover:flex">
-                        <button class="p-1 hover:text-blue-400" onclick="Chat.promptRenameSession('${s.id}', '${s.title}', event)" title="تغییر نام">
-                            <i data-lucide="edit-2" class="w-3 h-3"></i>
+
+                    <!-- Floating Action Popover on Hover -->
+                    <div class="session-actions-popover opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center gap-0.5 transition-all duration-150 shrink-0">
+                        <button type="button" class="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 ${isPinned ? 'text-amber-500' : 'text-gray-400 hover:text-amber-500'} transition cursor-pointer" onclick="Chat.togglePinSession('${s.id}', event)" title="${isPinned ? 'برداشتن سنجاق' : 'سنجاق کردن به اول لیست'}">
+                            <i data-lucide="pin" class="w-3.5 h-3.5 ${isPinned ? 'fill-amber-500/40 text-amber-500' : ''}"></i>
                         </button>
-                        <button class="p-1 hover:text-red-400" onclick="Chat.deleteSession('${s.id}', event)" title="حذف">
-                            <i data-lucide="trash" class="w-3 h-3"></i>
+                        <button type="button" class="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-500 transition cursor-pointer" onclick="Chat.promptRenameSession('${s.id}', '${escapedJsTitle}', event)" title="تغییر نام">
+                            <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button type="button" class="p-1 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/50 text-gray-400 hover:text-rose-500 transition cursor-pointer" onclick="Chat.openDeleteModal('${s.id}', '${escapedJsTitle}', event)" title="حذف گفتگو">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>
                 </div>
@@ -1722,9 +1761,66 @@ const Chat = {
         }
     },
 
-    async deleteSession(sessionId, event) {
+    async togglePinSession(sessionId, event) {
         if (event) event.stopPropagation();
-        if (!confirm('آیا از حذف این گفتگو اطمینان دارید؟')) return;
+        try {
+            const res = await fetch(`/api/chat/sessions/${sessionId}/pin`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${App.token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const sess = this.sessions.find(s => s.id === sessionId);
+                if (sess) {
+                    sess.is_pinned = data.is_pinned;
+                }
+                this.renderSessionsList();
+                App.toast(data.is_pinned ? 'گفتگو به اول لیست سنجاق شد' : 'سنجاق گفتگو برداشته شد', 'info');
+            } else {
+                App.toast('خطا در سنجاق کردن گفتگو', 'error');
+            }
+        } catch (e) {
+            App.toast('خطا در سنجاق کردن گفتگو', 'error');
+        }
+    },
+
+    openDeleteModal(sessionId = null, sessionTitle = null, event = null) {
+        if (event) event.stopPropagation();
+        const targetId = sessionId || this.currentSessionId;
+        if (!targetId) return;
+
+        this.pendingDeleteSessionId = targetId;
+        let title = sessionTitle;
+        if (!title) {
+            const s = this.sessions.find(item => item.id === targetId);
+            title = s ? s.title : 'گفتگوی جاری';
+        }
+
+        const titleEl = document.getElementById('delete-modal-session-title');
+        if (titleEl) {
+            titleEl.textContent = title;
+        }
+
+        const modal = document.getElementById('session-delete-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    },
+
+    closeDeleteModal() {
+        this.pendingDeleteSessionId = null;
+        const modal = document.getElementById('session-delete-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    },
+
+    async confirmDeleteSession() {
+        const sessionId = this.pendingDeleteSessionId;
+        if (!sessionId) {
+            this.closeDeleteModal();
+            return;
+        }
 
         try {
             const res = await fetch(`/api/chat/sessions/${sessionId}`, {
@@ -1743,18 +1839,23 @@ const Chat = {
                     this.renderSessionsList();
                 }
                 this.updateQuestionsNav();
-                App.toast('گفتگو با موفقیت حذف شد', 'info');
+                App.toast('گفتگو با موفقیت پاک شد', 'info');
             } else {
                 App.toast('خطا در حذف گفتگو', 'error');
             }
         } catch (e) {
             App.toast('خطا در حذف گفتگو', 'error');
+        } finally {
+            this.closeDeleteModal();
         }
     },
 
+    deleteSession(sessionId, event) {
+        this.openDeleteModal(sessionId, null, event);
+    },
+
     deleteCurrentSession() {
-        if (!this.currentSessionId) return;
-        this.deleteSession(this.currentSessionId);
+        this.openDeleteModal(this.currentSessionId);
     },
 
     appendMessage(role, content, hasAttachment = false, attachmentName = '', reasoning = null) {

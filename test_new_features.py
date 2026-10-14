@@ -167,5 +167,45 @@ class TestAdvancedFeaturesAndQueue(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_07_pin_session_ordering(self):
+        from app.database import SessionLocal, ChatSession
+        with TestClient(app) as client:
+            login_res = client.post("/api/auth/login", json={
+                "username": settings.DEFAULT_ADMIN_USERNAME,
+                "password": settings.DEFAULT_ADMIN_PASSWORD
+            })
+            token = login_res.json()["access_token"]
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # 1. Create two sessions: Sess 1 and Sess 2
+            res1 = client.post("/api/chat/sessions", headers=headers, json={"title": "Session Older"})
+            self.assertEqual(res1.status_code, 200)
+            id1 = res1.json()["id"]
+
+            res2 = client.post("/api/chat/sessions", headers=headers, json={"title": "Session Newer"})
+            self.assertEqual(res2.status_code, 200)
+            id2 = res2.json()["id"]
+
+            # 2. Pin the older session
+            pin_res = client.post(f"/api/chat/sessions/{id1}/pin", headers=headers)
+            self.assertEqual(pin_res.status_code, 200)
+            self.assertTrue(pin_res.json()["is_pinned"])
+
+            # 3. Check GET /sessions - pinned session MUST be first in list
+            list_res = client.get("/api/chat/sessions", headers=headers)
+            sessions = list_res.json()
+            self.assertEqual(sessions[0]["id"], id1)
+            self.assertTrue(sessions[0]["is_pinned"])
+
+            # 4. Unpin the session
+            unpin_res = client.post(f"/api/chat/sessions/{id1}/pin", headers=headers)
+            self.assertEqual(unpin_res.status_code, 200)
+            self.assertFalse(unpin_res.json()["is_pinned"])
+
+            # 5. Clean up test sessions
+            client.delete(f"/api/chat/sessions/{id1}", headers=headers)
+            client.delete(f"/api/chat/sessions/{id2}", headers=headers)
+            print("[PASS] Pinning session and top ordering verified successfully")
+
 if __name__ == "__main__":
     unittest.main()

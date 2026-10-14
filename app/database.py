@@ -61,6 +61,7 @@ class ChatSession(Base):
     model_name = Column(String(100), default="qwen:0.5b", nullable=False)
     conversation_summary = Column(Text, nullable=True)
     is_deleted = Column(Boolean, default=False, nullable=False)
+    is_pinned = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
 
@@ -290,6 +291,8 @@ def migrate_schema():
                     conn.exec_driver_sql("ALTER TABLE chat_sessions ADD COLUMN conversation_summary TEXT")
                 if "is_deleted" not in sess_cols:
                     conn.exec_driver_sql("ALTER TABLE chat_sessions ADD COLUMN is_deleted BOOLEAN DEFAULT 0")
+                if "is_pinned" not in sess_cols:
+                    conn.exec_driver_sql("ALTER TABLE chat_sessions ADD COLUMN is_pinned BOOLEAN DEFAULT 0")
         except Exception:
             pass
 
