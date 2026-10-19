@@ -30,7 +30,12 @@ if (window.marked) {
                 return marked.parse(trimmedCode);
             }
 
-            // 2. Smart Interactive Chart (Chart.js: Line, Bar, Doughnut, Pie, Radar)
+            // 2. Graphify Knowledge Graph & Network Engine (vis-network)
+            if (window.Chat && Chat.isGraphBlock(code, lang)) {
+                return Chat.renderGraphifyCard(code, safeCode, lang);
+            }
+
+            // 3. Smart Interactive Chart (Chart.js: Line, Bar, Doughnut, Pie, Radar)
             if (window.Chat && Chat.isChartBlock(code, lang)) {
                 return Chat.renderSmartChartCard(code, safeCode, lang);
             }
@@ -75,6 +80,8 @@ const Chat = {
     activeBubbleWrapper: null,
     currentAccumulatedResponse: '',
     chartInstances: {},
+    graphInstances: {},
+    graphDatasets: {},
     pendingDeleteSessionId: null,
 
     toPersianDigits(str) {
@@ -192,13 +199,335 @@ const Chat = {
         `;
     },
 
+    isGraphBlock(code, lang) {
+        const normLang = (lang || '').trim().toLowerCase();
+        if (['graph', 'network', 'knowledge-graph', 'graphify', 'vis', 'kg'].includes(normLang)) return true;
+        const trimmed = (code || '').trim();
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (parsed.nodes && (parsed.edges || parsed.links)) return true;
+                if (parsed['گره‌ها'] && (parsed['یال‌ها'] || parsed['روابط'])) return true;
+                if (parsed.type && ['graph', 'network', 'knowledge-graph', 'graphify', 'گراف', 'شبکه'].includes(String(parsed.type).toLowerCase())) return true;
+            } catch (e) {}
+        }
+        if (/^(?:type|نوع):\s*(?:graph|network|knowledge-graph|graphify|گراف|شبکه)/im.test(trimmed)) {
+            return true;
+        }
+        if (/^(?:nodes|گره‌ها|گرهها|موجودیت‌ها)[:\-=\t]/im.test(trimmed) && /(?:edges|links|یال‌ها|یالها|روابط)[:\-=\t]/im.test(trimmed)) {
+            return true;
+        }
+        return false;
+    },
+
+    parseGraphData(rawCode, lang) {
+        const trimmed = (rawCode || '').trim();
+        let title = 'گراف دانش و تحلیل شبکه روابط';
+        let rawNodes = [];
+        let rawEdges = [];
+
+        // Attempt 1: JSON Parsing
+        let parsedJson = null;
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+                parsedJson = JSON.parse(trimmed);
+            } catch (e) {
+                try {
+                    const cleaned = trimmed.replace(/,\s*([\]}])/g, '$1');
+                    parsedJson = JSON.parse(cleaned);
+                } catch (e2) {}
+            }
+        }
+
+        if (parsedJson) {
+            title = parsedJson.title || parsedJson.عنوان || parsedJson.name || title;
+            rawNodes = parsedJson.nodes || parsedJson['گره‌ها'] || parsedJson['گره_ها'] || parsedJson.vertices || [];
+            rawEdges = parsedJson.edges || parsedJson['یال‌ها'] || parsedJson['یال_ها'] || parsedJson.links || parsedJson['روابط'] || [];
+        }
+
+        // Attempt 2: Line-by-line / Text Parsing
+        if (!rawNodes || rawNodes.length === 0) {
+            const lines = trimmed.split('\n').map(l => l.trim()).filter(Boolean);
+            let inNodes = false;
+            let inEdges = false;
+
+            for (const line of lines) {
+                if (/^(?:title|عنوان)[:\-=\t]+\s*(.+)$/i.test(line)) {
+                    const m = line.match(/^(?:title|عنوان)[:\-=\t]+\s*(.+)$/i);
+                    title = m[1].replace(/^["']|["']$/g, '');
+                    continue;
+                }
+                if (/^(?:nodes|گره‌ها|گرهها|موجودیت‌ها)[:\-=\t]/i.test(line)) {
+                    inNodes = true;
+                    inEdges = false;
+                    continue;
+                }
+                if (/^(?:edges|links|یال‌ها|یالها|روابط)[:\-=\t]/i.test(line)) {
+                    inEdges = true;
+                    inNodes = false;
+                    continue;
+                }
+
+                if (inNodes) {
+                    const cleaned = line.replace(/^[\*\-#\d.]+\s*/, '').trim();
+                    if (cleaned.includes('->') || cleaned.includes('-->') || cleaned.includes('=>')) {
+                        inEdges = true;
+                        inNodes = false;
+                    } else if (cleaned) {
+                        const commMatch = cleaned.match(/^(.+?)\s*[\[\(](.+?)[\]\)]$/);
+                        if (commMatch) {
+                            rawNodes.push({ id: commMatch[1].trim(), label: commMatch[1].trim(), community: commMatch[2].trim() });
+                        } else {
+                            rawNodes.push({ id: cleaned, label: cleaned, community: 'عمومی' });
+                        }
+                    }
+                }
+
+                if (inEdges || line.includes('->') || line.includes('-->') || line.includes('=>')) {
+                    const edgeMatch = line.match(/^[\*\-#\d.]*\s*(.+?)\s*(?:->|-->|=>|-+>)\s*(.+?)(?:[:\-—\t]+\s*(.+))?$/);
+                    if (edgeMatch) {
+                        const from = edgeMatch[1].trim().replace(/^["']|["']$/g, '');
+                        const to = edgeMatch[2].trim().replace(/^["']|["']$/g, '');
+                        const label = (edgeMatch[3] || '').trim().replace(/^["']|["']$/g, '');
+                        rawEdges.push({ from, to, label });
+                    }
+                }
+            }
+        }
+
+        // Normalize Nodes
+        const nodesMap = new Map();
+        (rawNodes || []).forEach((n, idx) => {
+            let id = n.id !== undefined && n.id !== null ? String(n.id) : (n.label || String(idx + 1));
+            let label = n.label || n.name || n.title || id;
+            let community = n.community || n.group || n.category || n['خوشه'] || n['دسته'] || 'عمومی';
+            let desc = n.title || n.description || n['توضیحات'] || label;
+            nodesMap.set(String(id), {
+                id: String(id),
+                label: String(label),
+                community: String(community),
+                title: String(desc),
+                degree: 0
+            });
+        });
+
+        // Normalize Edges
+        const edges = [];
+        (rawEdges || []).forEach(e => {
+            const from = String(e.from !== undefined ? e.from : (e.source || ''));
+            const to = String(e.to !== undefined ? e.to : (e.target || ''));
+            if (!from || !to) return;
+
+            const label = e.label || e.relation || e.title || '';
+            const arrows = e.arrows || 'to';
+
+            if (!nodesMap.has(from)) {
+                nodesMap.set(from, { id: from, label: from, community: 'عمومی', title: from, degree: 0 });
+            }
+            if (!nodesMap.has(to)) {
+                nodesMap.set(to, { id: to, label: to, community: 'عمومی', title: to, degree: 0 });
+            }
+
+            nodesMap.get(from).degree++;
+            nodesMap.get(to).degree++;
+
+            edges.push({ from, to, label: String(label), arrows: String(arrows) });
+        });
+
+        const nodes = Array.from(nodesMap.values());
+
+        // Palette for Communities (Graphify-style vibrant clusters)
+        const palette = [
+            '#10b981', // emerald
+            '#06b6d4', // cyan
+            '#8b5cf6', // violet
+            '#f59e0b', // amber
+            '#f43f5e', // rose
+            '#3b82f6', // blue
+            '#14b8a6', // teal
+            '#ec4899', // pink
+            '#6366f1', // indigo
+            '#84cc16'  // lime
+        ];
+
+        const communities = {};
+        nodes.forEach(n => {
+            communities[n.community] = (communities[n.community] || 0) + 1;
+        });
+
+        const communityColors = {};
+        Object.keys(communities).forEach((cName, idx) => {
+            communityColors[cName] = palette[idx % palette.length];
+        });
+
+        return {
+            title,
+            nodes,
+            edges,
+            communities,
+            communityColors
+        };
+    },
+
+    renderGraphifyCard(rawCode, safeCode, lang) {
+        const parsed = this.parseGraphData(rawCode, lang);
+        if (!parsed.nodes.length) {
+            return `
+                <div class="code-block-wrapper my-3 rounded-xl overflow-hidden border border-gray-700/60 bg-[#161616] shadow-lg text-left" dir="ltr">
+                    <pre class="p-3.5 m-0 bg-[#161616] overflow-x-auto text-[13px] font-mono leading-relaxed"><code>${safeCode}</code></pre>
+                </div>
+            `;
+        }
+
+        const cardId = 'graphify-' + Math.random().toString(36).substring(2, 9);
+        const title = parsed.title || 'گراف دانش و تحلیل شبکه روابط';
+        const communityNames = Object.keys(parsed.communities);
+
+        const configPayload = {
+            cardId,
+            title,
+            nodes: parsed.nodes,
+            edges: parsed.edges,
+            communities: parsed.communities,
+            communityColors: parsed.communityColors
+        };
+        const encodedConfig = encodeURIComponent(JSON.stringify(configPayload));
+
+        const legendHtml = [
+            `<button type="button" class="graphify-legend-chip px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-200 dark:bg-white/10 text-gray-800 dark:text-gray-200 active" onclick="Chat.filterGraphByCommunity('${cardId}', 'ALL')">همه (${this.toPersianDigits(parsed.nodes.length)})</button>`
+        ].concat(communityNames.map(cName => {
+            const col = parsed.communityColors[cName] || '#10b981';
+            const cnt = parsed.communities[cName];
+            return `<button type="button" class="graphify-legend-chip px-2.5 py-1 rounded-full text-xs font-semibold text-white shadow-xs flex items-center gap-1.5" style="background-color: ${col}" onclick="Chat.filterGraphByCommunity('${cardId}', '${cName.replace(/'/g, "\\'")}')">
+                <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+                <span>${cName}</span>
+                <span class="opacity-80 font-mono text-[10px]">(${this.toPersianDigits(cnt)})</span>
+            </button>`;
+        })).join(' ');
+
+        return `
+            <div class="graphify-container my-4 rounded-2xl border border-gray-200 dark:border-gray-700/70 bg-white dark:bg-[#1a1a1a] shadow-lg overflow-hidden transition-all select-none" id="${cardId}" data-graph-config="${encodedConfig}">
+                <!-- Header: Title, Graphify Badge, Toolbar -->
+                <div class="graphify-header flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-gray-50/90 dark:bg-[#232323] border-b border-gray-200 dark:border-gray-700/60">
+                    <div class="flex items-center gap-3">
+                        <span class="p-2 rounded-xl bg-gradient-to-tr from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                            <i data-lucide="share-2" class="w-4 h-4"></i>
+                        </span>
+                        <div>
+                            <h4 class="font-bold text-sm text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                                <span>${title}</span>
+                            </h4>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                    موتور گراف دانش Graphify
+                                </span>
+                                <span class="text-[11px] text-gray-400">تحلیل شبکه روابط و مفاهیم</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Toolbar: Search, Fit, Physics, Zoom, Download, Inspector, Code -->
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <div class="relative">
+                            <input type="text" placeholder="جستجوی گره..." class="w-28 md:w-36 text-xs pr-7 pl-2 py-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1c1c1c] text-gray-700 dark:text-gray-200 focus:outline-none focus:border-emerald-500" oninput="Chat.searchGraphNode('${cardId}', this.value)" dir="rtl">
+                            <i data-lucide="search" class="w-3.5 h-3.5 text-gray-400 absolute right-2 top-2 pointer-events-none"></i>
+                        </div>
+
+                        <button type="button" class="graphify-btn p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-gray-600 hover:text-emerald-500 dark:text-gray-300 dark:hover:text-emerald-400 transition cursor-pointer shadow-sm" onclick="Chat.fitGraphView('${cardId}')" title="بازنشانی و تطبیق نما به مرکز">
+                            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                        </button>
+
+                        <button type="button" id="btn-physics-${cardId}" class="graphify-btn p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-gray-600 hover:text-amber-500 dark:text-gray-300 dark:hover:text-amber-400 transition cursor-pointer shadow-sm" onclick="Chat.toggleGraphPhysics('${cardId}')" title="توقف / ادامه پویایی و فیزیک گراف">
+                            <i data-lucide="pause" class="w-4 h-4"></i>
+                        </button>
+
+                        <button type="button" class="graphify-btn p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-gray-600 hover:text-emerald-500 dark:text-gray-300 dark:hover:text-emerald-400 transition cursor-pointer shadow-sm" onclick="Chat.zoomGraph('${cardId}', 1.25)" title="بزرگ‌نمایی">
+                            <i data-lucide="zoom-in" class="w-4 h-4"></i>
+                        </button>
+
+                        <button type="button" class="graphify-btn p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-gray-600 hover:text-emerald-500 dark:text-gray-300 dark:hover:text-emerald-400 transition cursor-pointer shadow-sm" onclick="Chat.zoomGraph('${cardId}', 0.8)" title="کوچک‌نمایی">
+                            <i data-lucide="zoom-out" class="w-4 h-4"></i>
+                        </button>
+
+                        <button type="button" class="graphify-btn p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-gray-600 hover:text-emerald-500 dark:text-gray-300 dark:hover:text-emerald-400 transition cursor-pointer shadow-sm" onclick="Chat.downloadGraphImage('${cardId}')" title="دانلود تصویر گراف دانش (PNG)">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                        </button>
+
+                        <button type="button" id="btn-inspector-${cardId}" class="graphify-btn p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-emerald-600 dark:text-emerald-400 border-emerald-500/40 transition cursor-pointer shadow-sm" onclick="Chat.toggleGraphInspector('${cardId}')" title="پنل مشخصات گره (Inspector)">
+                            <i data-lucide="info" class="w-4 h-4"></i>
+                        </button>
+
+                        <button type="button" class="graphify-btn p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#202020] text-gray-600 hover:text-blue-500 dark:text-gray-300 dark:hover:text-blue-400 transition cursor-pointer shadow-sm" onclick="Chat.toggleVisualCode('${cardId}')" title="مشاهده ساختار داده خام JSON">
+                            <i data-lucide="code" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stats Banner -->
+                <div class="px-4 py-2 bg-emerald-500/5 dark:bg-emerald-500/10 border-b border-emerald-500/15 text-xs text-gray-700 dark:text-gray-200 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-emerald-500 flex-shrink-0">
+                            <i data-lucide="network" class="w-3.5 h-3.5"></i>
+                        </span>
+                        <span class="font-medium">گراف دانش با قابلیت کلیک، جابجایی گره‌ها، بزرگ‌نمایی و بازرسی ارتباطات</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-[11px] font-mono text-gray-500 dark:text-gray-400 mr-auto">
+                        <span>گره‌ها: <strong class="text-emerald-600 dark:text-emerald-400 font-bold">${this.toPersianDigits(parsed.nodes.length)}</strong></span>
+                        <span>ارتباطات (یال‌ها): <strong class="text-cyan-600 dark:text-cyan-400 font-bold">${this.toPersianDigits(parsed.edges.length)}</strong></span>
+                        <span>خوشه‌ها: <strong class="text-violet-600 dark:text-violet-400 font-bold">${this.toPersianDigits(communityNames.length)}</strong></span>
+                    </div>
+                </div>
+
+                <!-- Canvas + Floating Node Inspector -->
+                <div class="graphify-canvas-wrap relative h-[420px]">
+                    <div id="canvas-${cardId}" class="graphify-canvas w-full h-full"></div>
+
+                    <!-- Floating Node Inspector Panel -->
+                    <div id="inspector-${cardId}" class="graphify-inspector absolute top-3 left-3 w-72 md:w-80 max-h-[390px] overflow-y-auto bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur-md border border-gray-200 dark:border-gray-700/80 rounded-2xl p-3.5 shadow-2xl z-20 transition-all text-xs">
+                        <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700/60 pb-2 mb-2">
+                            <div class="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100">
+                                <i data-lucide="info" class="w-4 h-4 text-emerald-500"></i>
+                                <span>مشخصات گره (Inspector)</span>
+                            </div>
+                            <button type="button" onclick="Chat.toggleGraphInspector('${cardId}')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                        <div id="inspector-content-${cardId}" class="space-y-2">
+                            <div class="text-gray-400 text-center py-6">
+                                <i data-lucide="mouse-pointer-click" class="w-6 h-6 mx-auto mb-2 text-gray-400/60"></i>
+                                <p>روی هر گره در گراف کلیک کنید تا مشخصات و ارتباطات آن نمایش یابد.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Community Legend Footer -->
+                <div class="px-4 py-2.5 bg-gray-50/70 dark:bg-[#202020] border-t border-gray-200 dark:border-gray-700/60 flex items-center gap-2 overflow-x-auto text-xs">
+                    <span class="text-gray-500 font-medium whitespace-nowrap flex items-center gap-1">
+                        <i data-lucide="tag" class="w-3 h-3 text-emerald-500"></i>
+                        <span>خوشه‌ها:</span>
+                    </span>
+                    ${legendHtml}
+                </div>
+
+                <!-- Raw Code View -->
+                <div class="raw-code-view hidden border-t border-gray-700/60 text-left font-mono text-xs text-gray-300 bg-black/40 p-3" dir="ltr">
+                    <pre class="m-0 overflow-x-auto">${safeCode}</pre>
+                </div>
+            </div>
+        `;
+    },
+
     isChartBlock(code, lang) {
-        if (['chart', 'line', 'bar', 'doughnut', 'pie', 'radar', 'graph', 'data'].includes(lang)) return true;
+        if (this.isGraphBlock(code, lang)) return false;
+        if (['chart', 'line', 'bar', 'doughnut', 'pie', 'radar', 'data'].includes(lang)) return true;
         const trimmed = (code || '').trim();
         // Check for JSON chart spec
         if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
             try {
                 const parsed = JSON.parse(trimmed);
+                if (parsed.nodes && (parsed.edges || parsed.links)) return false;
                 if (parsed.labels || parsed.data || parsed.datasets || parsed.type) return true;
             } catch (e) {}
         }
@@ -813,6 +1142,484 @@ const Chat = {
         });
     },
 
+    initGraphify(cardId) {
+        const card = document.getElementById(cardId);
+        if (!card) return;
+        const canvasContainer = document.getElementById('canvas-' + cardId);
+        if (!canvasContainer) return;
+
+        if (card.dataset.graphInitialized === 'true' && this.graphInstances[cardId]) {
+            return;
+        }
+
+        if (typeof window.vis === 'undefined' || !window.vis.Network) {
+            console.warn('vis-network library not loaded yet');
+            return;
+        }
+
+        let configData = null;
+        try {
+            configData = JSON.parse(decodeURIComponent(card.dataset.graphConfig));
+        } catch (e) {
+            console.error('Failed to parse graph config:', e);
+            return;
+        }
+
+        const isDark = document.documentElement.classList.contains('dark');
+        const nodesData = configData.nodes || [];
+        const edgesData = configData.edges || [];
+        const communityColors = configData.communityColors || {};
+
+        // Prepare nodesDS
+        const formattedNodes = nodesData.map(n => {
+            const commColor = communityColors[n.community] || '#10b981';
+            const size = Math.min(36, Math.max(16, 16 + (n.degree || 1) * 3));
+            return {
+                id: n.id,
+                label: n.label || String(n.id),
+                community: n.community || 'عمومی',
+                title: n.title || n.label,
+                rawNode: n,
+                shape: 'dot',
+                size: size,
+                color: {
+                    background: commColor,
+                    border: isDark ? '#ffffff' : '#1f2937',
+                    highlight: {
+                        background: '#34d399',
+                        border: '#ffffff'
+                    },
+                    hover: {
+                        background: '#6ee7b7',
+                        border: '#ffffff'
+                    }
+                },
+                borderWidth: 2,
+                borderWidthSelected: 3.5,
+                shadow: {
+                    enabled: true,
+                    color: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.15)',
+                    size: 8,
+                    x: 2,
+                    y: 2
+                },
+                font: {
+                    color: isDark ? '#f3f4f6' : '#111827',
+                    size: 13,
+                    face: 'Vazirmatn, Tahoma, sans-serif',
+                    strokeWidth: isDark ? 2.5 : 2,
+                    strokeColor: isDark ? '#1a1a1a' : '#ffffff',
+                    multi: false
+                }
+            };
+        });
+
+        // Prepare edgesDS
+        const formattedEdges = edgesData.map((e, idx) => ({
+            id: 'e-' + idx,
+            from: e.from,
+            to: e.to,
+            label: e.label || '',
+            arrows: e.arrows || 'to',
+            rawEdge: e,
+            color: {
+                color: isDark ? 'rgba(156, 163, 175, 0.45)' : 'rgba(107, 114, 128, 0.45)',
+                highlight: '#10b981',
+                hover: '#10b981'
+            },
+            width: 1.8,
+            selectionWidth: 3,
+            hoverWidth: 2.5,
+            smooth: {
+                type: 'continuous',
+                roundness: 0.35
+            },
+            font: {
+                color: isDark ? '#9ca3af' : '#4b5563',
+                size: 10.5,
+                face: 'Vazirmatn, Tahoma, sans-serif',
+                strokeWidth: 2,
+                strokeColor: isDark ? '#1a1a1a' : '#ffffff',
+                align: 'middle'
+            }
+        }));
+
+        const nodesDS = new vis.DataSet(formattedNodes);
+        const edgesDS = new vis.DataSet(formattedEdges);
+
+        this.graphDatasets[cardId] = { nodesDS, edgesDS, configData };
+
+        if (this.graphInstances[cardId]) {
+            try { this.graphInstances[cardId].destroy(); } catch (e) {}
+            delete this.graphInstances[cardId];
+        }
+
+        const container = canvasContainer;
+        const data = { nodes: nodesDS, edges: edgesDS };
+
+        const options = {
+            physics: {
+                enabled: true,
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    gravitationalConstant: -55,
+                    centralGravity: 0.008,
+                    springLength: 100,
+                    springConstant: 0.08,
+                    damping: 0.45,
+                    avoidOverlap: 0.8
+                },
+                stabilization: {
+                    iterations: 120,
+                    updateInterval: 25
+                }
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 150,
+                dragNodes: true,
+                dragView: true,
+                zoomView: true,
+                selectConnectedEdges: true,
+                multiselect: false
+            }
+        };
+
+        const network = new vis.Network(container, data, options);
+        this.graphInstances[cardId] = network;
+        card.dataset.graphInitialized = 'true';
+
+        network.on('selectNode', (params) => {
+            if (params.nodes.length > 0) {
+                const selectedId = params.nodes[0];
+                this.updateGraphInspector(cardId, selectedId);
+            }
+        });
+
+        network.on('deselectNode', () => {
+            this.resetGraphInspector(cardId);
+        });
+
+        network.on('doubleClick', (params) => {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                network.focus(nodeId, {
+                    scale: 1.4,
+                    animation: { duration: 500, easingFunction: 'easeInOutQuad' }
+                });
+            }
+        });
+
+        if (window.lucide) lucide.createIcons();
+    },
+
+    updateGraphInspector(cardId, nodeId) {
+        const inspectorEl = document.getElementById('inspector-' + cardId);
+        const contentEl = document.getElementById('inspector-content-' + cardId);
+        if (!inspectorEl || !contentEl) return;
+
+        const ds = this.graphDatasets[cardId];
+        if (!ds) return;
+
+        const node = ds.nodesDS.get(nodeId);
+        if (!node) return;
+
+        inspectorEl.classList.remove('hidden');
+
+        const commColor = (ds.configData.communityColors && ds.configData.communityColors[node.community]) || '#10b981';
+        const allEdges = ds.edgesDS.get();
+        const incoming = allEdges.filter(e => String(e.to) === String(nodeId));
+        const outgoing = allEdges.filter(e => String(e.from) === String(nodeId));
+
+        const incomingHtml = incoming.length > 0
+            ? incoming.map(e => {
+                const fromNode = ds.nodesDS.get(e.from);
+                const fromLabel = fromNode ? fromNode.label : e.from;
+                return `
+                    <div class="flex items-center justify-between p-1.5 rounded-lg bg-gray-100/70 dark:bg-white/5 border border-gray-200/50 dark:border-gray-700/40 text-[11px] cursor-pointer hover:border-emerald-500 transition" onclick="Chat.focusGraphNode('${cardId}', '${e.from}')">
+                        <span class="font-medium text-gray-800 dark:text-gray-200 flex items-center gap-1">
+                            <i data-lucide="arrow-left" class="w-3 h-3 text-emerald-500"></i>
+                            <span>${fromLabel}</span>
+                        </span>
+                        <span class="text-gray-400 font-mono text-[10px]">${e.label || 'ارتباط'}</span>
+                    </div>
+                `;
+            }).join('')
+            : '<div class="text-gray-400 text-[11px] italic">هیچ یال ورودی وجود ندارد</div>';
+
+        const outgoingHtml = outgoing.length > 0
+            ? outgoing.map(e => {
+                const toNode = ds.nodesDS.get(e.to);
+                const toLabel = toNode ? toNode.label : e.to;
+                return `
+                    <div class="flex items-center justify-between p-1.5 rounded-lg bg-gray-100/70 dark:bg-white/5 border border-gray-200/50 dark:border-gray-700/40 text-[11px] cursor-pointer hover:border-cyan-500 transition" onclick="Chat.focusGraphNode('${cardId}', '${e.to}')">
+                        <span class="font-medium text-gray-800 dark:text-gray-200 flex items-center gap-1">
+                            <i data-lucide="arrow-right" class="w-3 h-3 text-cyan-500"></i>
+                            <span>${toLabel}</span>
+                        </span>
+                        <span class="text-gray-400 font-mono text-[10px]">${e.label || 'ارتباط'}</span>
+                    </div>
+                `;
+            }).join('')
+            : '<div class="text-gray-400 text-[11px] italic">هیچ یال خروجی وجود ندارد</div>';
+
+        contentEl.innerHTML = `
+            <div class="p-2.5 rounded-xl bg-gray-50 dark:bg-[#252525] border border-gray-200/60 dark:border-gray-700/60">
+                <div class="flex items-center justify-between gap-2">
+                    <h5 class="font-bold text-sm text-gray-900 dark:text-gray-100">${node.label}</h5>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-xs" style="background-color: ${commColor}">${node.community}</span>
+                </div>
+                ${node.title && node.title !== node.label ? `<p class="mt-2 text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed">${node.title}</p>` : ''}
+                <div class="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200/40 dark:border-gray-700/40 text-[10px] text-gray-500 dark:text-gray-400 font-mono">
+                    <span>شناسه: <strong>${node.id}</strong></span>
+                    <span>درجه اتصال: <strong>${this.toPersianDigits(incoming.length + outgoing.length)}</strong></span>
+                </div>
+            </div>
+
+            <!-- Incoming Links -->
+            <div class="space-y-1 mt-2">
+                <div class="text-[11px] font-bold text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                    <i data-lucide="arrow-down-left" class="w-3 h-3 text-emerald-500"></i>
+                    <span>یال‌های ورودی (${this.toPersianDigits(incoming.length)}):</span>
+                </div>
+                <div class="space-y-1 max-h-24 overflow-y-auto">${incomingHtml}</div>
+            </div>
+
+            <!-- Outgoing Links -->
+            <div class="space-y-1 mt-2">
+                <div class="text-[11px] font-bold text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                    <i data-lucide="arrow-up-right" class="w-3 h-3 text-cyan-500"></i>
+                    <span>یال‌های خروجی (${this.toPersianDigits(outgoing.length)}):</span>
+                </div>
+                <div class="space-y-1 max-h-24 overflow-y-auto">${outgoingHtml}</div>
+            </div>
+
+            <button type="button" onclick="Chat.focusGraphNode('${cardId}', '${node.id}')" class="w-full mt-2.5 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
+                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
+                <span>تمرکز و بزرگ‌نمایی روی گره</span>
+            </button>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+    },
+
+    resetGraphInspector(cardId) {
+        const contentEl = document.getElementById('inspector-content-' + cardId);
+        if (!contentEl) return;
+        contentEl.innerHTML = `
+            <div class="text-gray-400 text-center py-6">
+                <i data-lucide="mouse-pointer-click" class="w-6 h-6 mx-auto mb-2 text-gray-400/60"></i>
+                <p>روی هر گره در گراف کلیک کنید تا مشخصات و ارتباطات آن نمایش یابد.</p>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+    },
+
+    toggleGraphInspector(cardId) {
+        const inspectorEl = document.getElementById('inspector-' + cardId);
+        if (inspectorEl) {
+            inspectorEl.classList.toggle('hidden');
+        }
+    },
+
+    searchGraphNode(cardId, query) {
+        const network = this.graphInstances[cardId];
+        const ds = this.graphDatasets[cardId];
+        if (!network || !ds) return;
+
+        const q = (query || '').trim().toLowerCase();
+        if (!q) {
+            network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+            return;
+        }
+
+        const allNodes = ds.nodesDS.get();
+        const matched = allNodes.filter(n =>
+            (n.label && n.label.toLowerCase().includes(q)) ||
+            String(n.id).toLowerCase().includes(q) ||
+            (n.title && n.title.toLowerCase().includes(q))
+        );
+
+        if (matched.length > 0) {
+            const first = matched[0];
+            network.selectNodes(matched.map(m => m.id));
+            network.focus(first.id, {
+                scale: 1.35,
+                animation: { duration: 600, easingFunction: 'easeInOutQuad' }
+            });
+            this.updateGraphInspector(cardId, first.id);
+        }
+    },
+
+    focusGraphNode(cardId, nodeId) {
+        const network = this.graphInstances[cardId];
+        if (!network) return;
+        network.selectNodes([nodeId]);
+        network.focus(nodeId, {
+            scale: 1.45,
+            animation: { duration: 500, easingFunction: 'easeInOutQuad' }
+        });
+        this.updateGraphInspector(cardId, nodeId);
+    },
+
+    filterGraphByCommunity(cardId, communityName) {
+        const network = this.graphInstances[cardId];
+        const ds = this.graphDatasets[cardId];
+        const card = document.getElementById(cardId);
+        if (!network || !ds || !card) return;
+
+        const chips = card.querySelectorAll('.graphify-legend-chip');
+        chips.forEach(chip => {
+            if (chip.textContent.includes(communityName) || (communityName === 'ALL' && chip.textContent.includes('همه'))) {
+                chip.classList.add('active');
+            } else {
+                chip.classList.remove('active');
+            }
+        });
+
+        const allNodes = ds.nodesDS.get();
+        if (communityName === 'ALL') {
+            const updates = allNodes.map(n => ({
+                id: n.id,
+                opacity: 1.0,
+                hidden: false
+            }));
+            ds.nodesDS.update(updates);
+            network.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+            return;
+        }
+
+        const updates = allNodes.map(n => ({
+            id: n.id,
+            opacity: n.community === communityName ? 1.0 : 0.18
+        }));
+        ds.nodesDS.update(updates);
+
+        const targetNodeIds = allNodes.filter(n => n.community === communityName).map(n => n.id);
+        if (targetNodeIds.length > 0) {
+            network.fit({
+                nodes: targetNodeIds,
+                animation: { duration: 600, easingFunction: 'easeInOutQuad' }
+            });
+        }
+    },
+
+    toggleGraphPhysics(cardId) {
+        const network = this.graphInstances[cardId];
+        const btn = document.getElementById('btn-physics-' + cardId);
+        if (!network) return;
+
+        const isEnabled = network.physics && network.physics.physicsEnabled;
+        const newState = !isEnabled;
+        network.setOptions({ physics: { enabled: newState } });
+
+        if (btn) {
+            btn.innerHTML = newState ? '<i data-lucide="pause" class="w-4 h-4"></i>' : '<i data-lucide="play" class="w-4 h-4 text-emerald-500"></i>';
+            btn.title = newState ? 'توقف پویایی و فیزیک گراف' : 'ادامه پویایی و فیزیک گراف';
+            if (window.lucide) lucide.createIcons();
+        }
+    },
+
+    fitGraphView(cardId) {
+        const network = this.graphInstances[cardId];
+        if (network) {
+            network.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+        }
+    },
+
+    zoomGraph(cardId, factor) {
+        const network = this.graphInstances[cardId];
+        if (network) {
+            network.moveTo({ scale: network.getScale() * factor, animation: { duration: 300 } });
+        }
+    },
+
+    downloadGraphImage(cardId) {
+        const network = this.graphInstances[cardId];
+        const card = document.getElementById(cardId);
+        if (!network || !card) {
+            App.toast('گراف هنوز آماده دانلود نیست', 'warning');
+            return;
+        }
+
+        let configData = {};
+        try {
+            configData = JSON.parse(decodeURIComponent(card.dataset.graphConfig));
+        } catch (e) {}
+
+        const title = configData.title || 'knowledge-graph';
+        const canvasEl = card.querySelector('.graphify-canvas canvas');
+        if (!canvasEl) {
+            App.toast('بوم گراف در دسترس نیست', 'warning');
+            return;
+        }
+
+        const isDark = document.documentElement.classList.contains('dark');
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = canvasEl.width;
+        exportCanvas.height = canvasEl.height;
+        const ctx = exportCanvas.getContext('2d');
+
+        ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
+        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        ctx.drawImage(canvasEl, 0, 0);
+
+        const dataUrl = exportCanvas.toDataURL('image/png', 1.0);
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `${title.replace(/[\/\\:*?"<>|]/g, '_')}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        App.toast('تصویر باکیفیت گراف دانش دانلود شد', 'success');
+    },
+
+    initAllGraphs(container, force = false) {
+        const root = container || document;
+        const graphCards = root.querySelectorAll('.graphify-container');
+        graphCards.forEach(card => {
+            if (force) {
+                card.dataset.graphInitialized = 'false';
+            }
+            this.initGraphify(card.id);
+        });
+        if (window.lucide) lucide.createIcons();
+    },
+
+    updateAllGraphsTheme(isDark) {
+        Object.keys(this.graphInstances).forEach(cardId => {
+            const ds = this.graphDatasets[cardId];
+            if (!ds) return;
+
+            const allNodes = ds.nodesDS.get();
+            const updatedNodes = allNodes.map(n => ({
+                id: n.id,
+                color: {
+                    border: isDark ? '#ffffff' : '#1f2937'
+                },
+                font: {
+                    color: isDark ? '#f3f4f6' : '#111827',
+                    strokeColor: isDark ? '#1a1a1a' : '#ffffff'
+                }
+            }));
+            ds.nodesDS.update(updatedNodes);
+
+            const allEdges = ds.edgesDS.get();
+            const updatedEdges = allEdges.map(e => ({
+                id: e.id,
+                color: {
+                    color: isDark ? 'rgba(156, 163, 175, 0.45)' : 'rgba(107, 114, 128, 0.45)'
+                },
+                font: {
+                    color: isDark ? '#9ca3af' : '#4b5563',
+                    strokeColor: isDark ? '#1a1a1a' : '#ffffff'
+                }
+            }));
+            ds.edgesDS.update(updatedEdges);
+        });
+    },
+
     toggleVisualCode(cardId) {
         const card = document.getElementById(cardId);
         if (!card) return;
@@ -1042,6 +1849,7 @@ const Chat = {
     enhanceTablesAndMeters(container) {
         if (!container) return;
         this.initAllCharts(container);
+        this.initAllGraphs(container);
         const tables = container.querySelectorAll('table');
         tables.forEach(table => {
             if (table.dataset.enhanced) return;

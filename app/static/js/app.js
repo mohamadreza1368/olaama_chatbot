@@ -43,6 +43,9 @@ const App = {
         if (window.Chat && typeof Chat.updateAllChartsTheme === 'function') {
             Chat.updateAllChartsTheme(isDark);
         }
+        if (window.Chat && typeof Chat.updateAllGraphsTheme === 'function') {
+            Chat.updateAllGraphsTheme(isDark);
+        }
     },
 
     toast(message, type = 'info') {

@@ -262,6 +262,62 @@ button {
 }
 
 /* ============================================================
+   GRAPHIFY KNOWLEDGE GRAPH & NETWORK ENGINE (vis-network)
+   ============================================================ */
+.graphify-container {
+    direction: rtl;
+    text-align: right;
+    box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+.dark .graphify-container {
+    box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.55);
+}
+.graphify-container:hover {
+    box-shadow: 0 10px 35px -4px rgba(16, 185, 129, 0.16);
+}
+.graphify-canvas-wrap {
+    position: relative;
+    width: 100%;
+    height: 420px;
+    background: radial-gradient(circle at center, rgba(16, 185, 129, 0.03) 0%, transparent 70%);
+}
+.dark .graphify-canvas-wrap {
+    background: radial-gradient(circle at center, rgba(16, 185, 129, 0.05) 0%, #151515 80%);
+}
+.graphify-canvas {
+    width: 100%;
+    height: 100%;
+    outline: none;
+}
+.graphify-inspector {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    scrollbar-width: thin;
+}
+.graphify-legend-chip {
+    transition: all 0.2s ease;
+    user-select: none;
+    cursor: pointer;
+}
+.graphify-legend-chip:hover {
+    transform: translateY(-1px) scale(1.03);
+}
+.graphify-legend-chip.active {
+    box-shadow: 0 0 0 2px currentColor;
+}
+.graphify-btn {
+    transition: all 0.2s ease;
+    user-select: none;
+}
+.graphify-btn:hover {
+    transform: translateY(-1px);
+}
+.graphify-btn:active {
+    transform: translateY(0);
+}
+
+/* ============================================================
    OFFICE DASHBOARD, METERS & VISUAL CHARTS (طراحی اداری نمودارها)
    ============================================================ */
 .office-meter-card {
